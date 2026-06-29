@@ -5,7 +5,9 @@ import yaml
 from pathlib import Path
 from typing import Optional
 
-SKILLS_PATH = Path("/Volumes/Storage/OpenClaw-Space/skills")
+# Skills directory relative to project root
+# app/services/skill_loader.py -> ../../skills -> <project>/skills
+SKILLS_PATH = Path(__file__).resolve().parent.parent.parent / "skills"
 
 # Map chart types to skills and their references
 SKILL_MAP = {

@@ -39,6 +39,13 @@ ChinaExpe/
 ├── data/
 │   ├── config.json              # 运行时配置
 │   └── sessions/                # 对话会话持久化
+├── skills/                     # 命理技能包（内置）
+│   ├── ziwei-doushu/            #   紫微斗数
+│   ├── bazi-master/             #   八字大师
+│   ├── bazi-classical/          #   八字经典
+│   ├── ziping-zhengliu/         #   子平正解
+│   ├── ni-haixia-perspective/   #   倪海厦视角
+│   └── qimen-dunjia/            #   奇门遁甲
 ├── requirements.txt
 ├── setup.sh                     # 一键设置脚本
 ├── start.sh                     # 开发启动脚本
@@ -107,21 +114,7 @@ ollama pull qwen2.5:14b    # 或其他中文模型
 }
 ```
 
-### 3. 配置数据目录（硬编码路径）
-
-⚠️ **重要**：以下路径当前为硬编码，部署前请确认或修改。
-
-| 文件 | 路径 | 说明 |
-|------|------|------|
-| `skill_loader.py:8` | `/Volumes/Storage/OpenClaw-Space/skills` | 技能 SKILL.md 目录 |
-| `chart_service.py:6` | `/Volumes/Storage/OpenClaw-Space/命盘` | 命盘 JSON 数据目录 |
-| `chart_import_service.py:16-18` | 同上 | AI 导入的 schema & 示例 |
-| `knowledge_service.py:8` | `~/.openclaw/memory/lancedb` | LanceDB 知识库路径 |
-| `config_api.py:14` | `data/config.json` | 相对于项目根目录 |
-
-> **最简单的迁移方式**：将这些硬编码路径替换为相对于项目根目录的路径，或通过环境变量配置。详见下方 [路径迁移指南](#路径迁移指南)。
-
-### 4. 启动
+### 3. 启动
 
 **开发模式**（带热重载）：
 
@@ -136,7 +129,7 @@ bash start.sh
 python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
-### 5. 访问
+### 4. 访问
 
 浏览器打开 `http://127.0.0.1:8765`，在设置页面配置 API 后端即可开始对话。
 
@@ -198,44 +191,19 @@ WantedBy=multi-user.target  # 开机自启
 sudo nft add rule inet filter input tcp dport 1248 accept
 ```
 
-## 路径迁移指南
+## 外部依赖说明
 
-当前项目中存在一些 macOS 开发环境的硬编码路径。迁移到其他机器时，需要修改以下位置：
+所有路径已改为项目相对路径，克隆即用。唯一的可选外部依赖：
 
-### 最小改动方案
+| 依赖 | 路径 | 说明 |
+|------|------|------|
+| LanceDB 知识库 | `~/.openclaw/memory/lancedb` | `knowledge_service.py:8` — 可修改为项目内路径 |
 
-创建符号链接，避免修改代码：
-
-```bash
-# 技能目录
-ln -s /your/actual/skills/path /Volumes/Storage/OpenClaw-Space/skills
-
-# 命盘数据目录
-ln -s /your/actual/charts/path /Volumes/Storage/OpenClaw-Space/命盘
-```
-
-### 代码修改方案
-
-搜索以下路径并替换为你的实际路径：
-
-```bash
-grep -rn "OpenClaw-Space" app/
-grep -rn "/Volumes/Storage" app/
-```
-
-涉及文件：
-
-| 文件 | 行 | 路径 |
-|------|-----|------|
-| `app/services/skill_loader.py` | 8 | `SKILLS_PATH` |
-| `app/services/chart_service.py` | 6 | `CHART_BASE` |
-| `app/services/chart_import_service.py` | 16-18 | `SCHEMA_PATH`, `EXAMPLES_PATH`, `SKILLS_PATH` |
-| `app/services/knowledge_service.py` | 8 | `LANCE_DB_PATH` |
-| `app/main.py` | 19 | `data_dir` |
+如需修改 LanceDB 路径，编辑 `app/services/knowledge_service.py` 第 8 行的 `LANCE_DB_PATH`。
 
 ## 技能系统
 
-技能文件位于 `SKILLS_PATH` 指向的目录，采用 SKILL.md 格式：
+技能文件内置于 `skills/` 目录，采用 SKILL.md 格式：
 
 ```
 skills/

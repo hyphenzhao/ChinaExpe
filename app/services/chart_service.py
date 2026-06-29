@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-CHART_BASE = Path("/Volumes/Storage/OpenClaw-Space/命盘")
+CHART_BASE = Path(__file__).resolve().parent.parent.parent / "data" / "charts"
 
 # Standard Ziwei Doushu grid layout:
 # The 12 earthly branches have fixed positions in a 4x4 grid.

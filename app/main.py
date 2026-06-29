@@ -16,10 +16,12 @@ from .api.knowledge_api import router as knowledge_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - ensure data directories exist."""
-    data_dir = Path("/Volumes/Storage/Workspace/ChinaExpe/data")
+    data_dir = Path(__file__).resolve().parent.parent / "data"
     sessions_dir = data_dir / "sessions"
+    charts_dir = data_dir / "charts"
     data_dir.mkdir(parents=True, exist_ok=True)
     sessions_dir.mkdir(parents=True, exist_ok=True)
+    charts_dir.mkdir(parents=True, exist_ok=True)
     yield
 
 

@@ -94,7 +94,7 @@ async def import_chart(req: ImportChartRequest):
         raise HTTPException(status_code=400, detail="chart_type 必须是 'ziwei'、'shishen' 或 'auto'")
 
     # Load config for LLM settings
-    config_path = Path("/Volumes/Storage/Workspace/ChinaExpe/data/config.json")
+    config_path = Path(__file__).resolve().parent.parent.parent / "data" / "config.json"
     config = {}
     if config_path.exists():
         try:

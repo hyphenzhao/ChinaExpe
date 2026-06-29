@@ -16,8 +16,9 @@ from ..services.agent_service import agent_service
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
-SESSIONS_DIR = Path("/Volumes/Storage/Workspace/ChinaExpe/data/sessions")
-CONFIG_FILE = Path("/Volumes/Storage/Workspace/ChinaExpe/data/config.json")
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+SESSIONS_DIR = _DATA_DIR / "sessions"
+CONFIG_FILE = _DATA_DIR / "config.json"
 
 
 def _load_config() -> ApiConfig:

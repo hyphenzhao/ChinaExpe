@@ -11,7 +11,7 @@ from ..services.llm_service import llm_service
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
-CONFIG_FILE = Path("/Volumes/Storage/Workspace/ChinaExpe/data/config.json")
+CONFIG_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "config.json"
 
 DEEPSEEK_MODELS = [
     {"name": "deepseek-chat", "size": "—", "provider": "deepseek"},

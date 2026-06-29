@@ -13,9 +13,10 @@ from typing import Optional
 
 import httpx
 
-SCHEMA_PATH = Path("/Volumes/Storage/OpenClaw-Space/命盘/SCHEMA.json")
-EXAMPLES_PATH = Path("/Volumes/Storage/OpenClaw-Space/命盘")
-SKILLS_PATH = Path("/Volumes/Storage/OpenClaw-Space/skills")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SCHEMA_PATH = PROJECT_ROOT / "data" / "charts" / "SCHEMA.json"
+EXAMPLES_PATH = PROJECT_ROOT / "data" / "charts"
+SKILLS_PATH = PROJECT_ROOT / "skills"
 
 _schema_text = ""
 if SCHEMA_PATH.exists():
