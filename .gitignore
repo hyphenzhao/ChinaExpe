@@ -1,0 +1,24 @@
+# Python virtual env
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# IDE / Editor
+.claude/
+.codegraph/
+.vscode/
+.idea/
+
+# Runtime data (contains API keys, sessions)
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

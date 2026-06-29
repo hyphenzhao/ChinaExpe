@@ -1,0 +1,25 @@
+[Unit]
+Description=玄学助手 FastAPI Backend
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=haifeng
+Group=haifeng
+WorkingDirectory=/Volumes/Storage/Workspace/ChinaExpe
+Environment="PATH=/home/haifeng/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStartPre=/bin/mkdir -p /Volumes/Storage/Workspace/ChinaExpe/data/sessions
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xuanxue
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

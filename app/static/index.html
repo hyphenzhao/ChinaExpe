@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>玄学助手 — 紫微斗数 & 十神·子平命理</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/starfield.css">
+    <link rel="stylesheet" href="/css/chat.css">
+    <link rel="stylesheet" href="/css/chart-ziwei.css">
+    <link rel="stylesheet" href="/css/chart-shishen.css">
+    <link rel="stylesheet" href="/css/people.css">
+</head>
+<body>
+    <!-- Starfield background -->
+    <div class="starfield" id="starfield"></div>
+    <div class="starfield-overlay"></div>
+
+    <!-- App shell -->
+    <div id="app">
+        <!-- Page: Config -->
+        <div class="page hidden" id="page-config">
+            <div class="config-container">
+                <header class="page-header">
+                    <h1>⚙️ 配置</h1>
+                    <button class="btn btn-ghost" onclick="navigate('chat')">← 返回聊天</button>
+                </header>
+                <div class="config-card">
+                    <div class="form-group">
+                        <label>AI 提供商</label>
+                        <div class="toggle-group">
+                            <button class="toggle-btn active" data-provider="ollama" id="btn-ollama">Ollama</button>
+                            <button class="toggle-btn" data-provider="deepseek" id="btn-deepseek">DeepSeek</button>
+                        </div>
+                    </div>
+
+                    <div id="ollama-settings">
+                        <div class="form-group">
+                            <label>主机地址</label>
+                            <input type="text" id="ollama-host" value="http://127.0.0.1" class="input">
+                        </div>
+                        <div class="form-group">
+                            <label>端口</label>
+                            <input type="number" id="ollama-port" value="11434" class="input">
+                        </div>
+                    </div>
+
+                    <div id="deepseek-settings" class="hidden">
+                        <div class="form-group">
+                            <label>API 密钥</label>
+                            <input type="password" id="deepseek-key" placeholder="sk-..." class="input">
+                        </div>
+                        <div class="form-group">
+                            <label>API 地址</label>
+                            <input type="text" id="deepseek-url" value="https://api.deepseek.com" class="input">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>模型列表</label>
+                        <div class="model-actions">
+                            <button class="btn btn-secondary" onclick="refreshModels()">🔄 刷新模型</button>
+                            <button class="btn btn-secondary" onclick="testConnection()">🔍 测试连接</button>
+                        </div>
+                        <select id="model-select" class="input">
+                            <option value="">请先刷新模型列表</option>
+                        </select>
+                        <div id="test-result" class="test-result hidden"></div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Page: Chat -->
+        <div class="page" id="page-chat">
+            <div class="chat-layout">
+                <!-- Sidebar -->
+                <aside class="sidebar" id="sidebar">
+                    <div class="sidebar-header">
+                        <h2>🌙 玄学助手</h2>
+                        <button class="btn btn-ghost btn-icon" onclick="toggleSidebar()" title="折叠侧栏"><span id="sidebar-toggle-icon">☰</span></button>
+                    </div>
+                    <button class="btn btn-primary btn-full" onclick="newChat()">＋ 新对话</button>
+
+                    <div class="sidebar-section" id="sidebar-model-info" style="font-size:0.7rem;color:var(--text-muted);padding:0.25rem 0;">
+                    </div>
+
+                    <div class="sidebar-section">
+                        <label class="sidebar-label">对话历史</label>
+                        <div class="chat-list" id="chat-list">
+                            <div class="chat-list-empty">暂无对话</div>
+                        </div>
+                    </div>
+
+                    <div class="sidebar-footer">
+                        <a href="javascript:void(0)" onclick="navigate('people')" class="sidebar-link">👥 人物</a>
+                        <a href="javascript:void(0)" onclick="navigate('config')" class="sidebar-link">⚙️ 设置</a>
+                    </div>
+                </aside>
+
+                <!-- Main chat area -->
+                <main class="chat-main">
+                    <!-- Top bar -->
+                    <div class="chat-topbar">
+                        <button class="btn btn-ghost btn-icon" id="btn-toggle-sidebar" onclick="toggleSidebar()">☰</button>
+
+                        <div class="mode-selector">
+                            <button class="mode-btn active" data-mode="theory" onclick="setMode('theory')">📚 理论模式</button>
+                            <button class="mode-btn" data-mode="chart" onclick="setMode('chart')">🔮 看盘模式</button>
+                        </div>
+
+                        <div id="chart-mode-options" class="chart-mode-options hidden">
+                            <select id="chart-type-select" class="input input-sm" onchange="onChartTypeChange()">
+                                <option value="ziwei">紫微斗数</option>
+                                <option value="shishen">十神·子平命理</option>
+                            </select>
+                            <select id="person-select" class="input input-sm" onchange="onPersonChange()">
+                                <option value="">选择人物...</option>
+                            </select>
+                            <button class="btn btn-ghost btn-sm" onclick="showNewPersonModal()" title="添加新人物">＋</button>
+                            <button class="btn btn-ghost btn-sm" onclick="showImportModal()" title="AI导入命盘">🤖</button>
+                        </div>
+                    </div>
+
+                    <!-- Messages -->
+                    <div class="messages-container" id="messages-container">
+                        <div class="welcome-message" id="welcome-message">
+                            <div class="welcome-icon">🌙</div>
+                            <h2>欢迎使用玄学助手</h2>
+                            <p>选择模式开始对话：</p>
+                            <div class="welcome-actions">
+                                <button class="btn btn-secondary" onclick="setMode('theory')">📚 理论探讨</button>
+                                <button class="btn btn-accent" onclick="setMode('chart')">🔮 命盘解析</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input area -->
+                    <div class="input-area">
+                        <div id="meta-indicator" class="meta-indicator hidden"></div>
+                        <div class="context-tags" id="context-tags"></div>
+                        <div class="input-row">
+                            <textarea id="message-input" class="input" placeholder="输入消息... (Shift+Enter 换行)" rows="1" onkeydown="onInputKeydown(event)"></textarea>
+                            <button class="btn btn-accent btn-send" onclick="sendMessage()" id="btn-send">发送</button>
+                        </div>
+                    </div>
+                </main>
+
+                <!-- Chart panel (right side on landscape, hidden on portrait) -->
+                <aside id="chart-panel-right" class="chart-panel-right hidden">
+                    <button class="chart-toggle-btn chart-panel-toggle" onclick="toggleChartPanel()">
+                        <span id="chart-panel-toggle-icon">◀</span>
+                    </button>
+                    <div id="chart-display-wrapper-panel">
+                        <div id="chart-display" class="chart-display"></div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    <!-- Page: People Management -->
+    <div class="page hidden" id="page-people">
+            <div class="people-container">
+                <div class="people-header">
+                    <h1>👥 人物管理</h1>
+                    <div style="display:flex;gap:0.5rem;">
+                        <button class="btn btn-primary" onclick="showImportModalFromPeople()">🤖 AI 导入命盘</button>
+                        <button class="btn btn-ghost" onclick="navigate('chat')">← 返回聊天</button>
+                    </div>
+                </div>
+                <div class="people-grid" id="people-grid">
+                    <div class="people-empty"><div class="people-empty-icon">⏳</div><p>加载中...</p></div>
+                </div>
+            </div>
+        </div>
+
+    <!-- Modals -->
+    <div class="modal-overlay hidden" id="modal-overlay">
+        <!-- Ziwei Palace Detail -->
+        <div class="modal hidden" id="modal-palace">
+            <div class="modal-header">
+                <h3 id="modal-palace-title"></h3>
+                <button class="btn btn-ghost" onclick="closeModal('modal-palace')">✕</button>
+            </div>
+            <div class="modal-body" id="modal-palace-body"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-palace')">← 返回12宫</button>
+            </div>
+        </div>
+
+        <!-- New Person -->
+        <div class="modal hidden" id="modal-new-person">
+            <div class="modal-header">
+                <h3>添加新人物</h3>
+                <button class="btn btn-ghost" onclick="closeModal('modal-new-person')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>显示名称</label>
+                    <input type="text" id="new-person-display-name" class="input" placeholder="例如: 宋佳纯">
+                </div>
+                <div class="form-group">
+                    <label>缩写标识（英文，如 sjc）</label>
+                    <input type="text" id="new-person-id" class="input" placeholder="例如: sjc">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-new-person')">取消</button>
+                <button class="btn btn-primary" onclick="createNewPerson()">创建</button>
+            </div>
+        </div>
+
+        <!-- Import Chart (AI-powered) -->
+        <div class="modal hidden" id="modal-import-chart">
+            <div class="modal-header">
+                <h3>＋ 添加命盘</h3>
+                <button class="btn btn-ghost" onclick="closeModal('modal-import-chart')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>名字</label>
+                    <input type="text" id="import-display-name" class="input" placeholder="例如: 宋佳纯">
+                </div>
+                <div class="form-group">
+                    <label>缩写 <span style="color:var(--text-muted);font-weight:400;">（可选，留空则自动生成）</span></label>
+                    <input type="text" id="import-person-id" class="input" placeholder="例如: sjc">
+                </div>
+                <div class="form-group">
+                    <label>命盘</label>
+                    <textarea id="import-raw-text" class="input" rows="12" placeholder="粘贴排盘软件的导出内容，任意格式均可，AI 会自动识别类型并提取..."></textarea>
+                </div>
+                <div id="import-result" class="test-result hidden"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-import-chart')">取消</button>
+                <button class="btn btn-accent" onclick="importChartAI()" id="btn-import">🤖 AI 识别导入</button>
+            </div>
+        </div>
+
+        <!-- ShiShen popup -->
+        <div class="shishen-popup hidden" id="shishen-popup"></div>
+    </div>
+
+    <script src="/js/state.js?v=32"></script>
+    <script src="/js/app.js?v=32"></script>
+    <script src="/js/config.js?v=32"></script>
+    <script src="/js/chat.js?v=32"></script>
+    <script src="/js/chart-ziwei.js?v=32"></script>
+    <script src="/js/chart-shishen.js?v=32"></script>
+    <script src="/js/people.js?v=32"></script>
+</body>
+</html>

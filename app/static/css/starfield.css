@@ -1,0 +1,165 @@
+/* ===== Starfield Background Animation ===== */
+.starfield {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* CSS-based starfield using pseudo-elements and box shadows */
+.starfield::before {
+    content: '';
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background: white;
+    top: 10%;
+    left: 15%;
+    box-shadow:
+        /* Stars layer 1 - small */
+        50px 80px 0 rgba(255,255,255,0.8),
+        120px 30px 0 rgba(255,255,255,0.6),
+        200px 150px 0 rgba(255,255,255,0.7),
+        300px 60px 0 rgba(255,255,255,0.5),
+        400px 200px 0 rgba(255,255,255,0.8),
+        500px 100px 0 rgba(255,255,255,0.4),
+        600px 50px 0 rgba(255,255,255,0.7),
+        700px 180px 0 rgba(255,255,255,0.6),
+        800px 20px 0 rgba(255,255,255,0.8),
+        900px 120px 0 rgba(255,255,255,0.5),
+        1000px 80px 0 rgba(255,255,255,0.7),
+        1100px 160px 0 rgba(255,255,255,0.6),
+        1200px 30px 0 rgba(255,255,255,0.8),
+        1300px 90px 0 rgba(255,255,255,0.5),
+        1400px 170px 0 rgba(255,255,255,0.7),
+        /* Layer 1 down */
+        50px 280px 0 rgba(255,255,255,0.5),
+        150px 350px 0 rgba(255,255,255,0.7),
+        250px 400px 0 rgba(255,255,255,0.6),
+        350px 300px 0 rgba(255,255,255,0.8),
+        450px 420px 0 rgba(255,255,255,0.4),
+        550px 380px 0 rgba(255,255,255,0.7),
+        650px 450px 0 rgba(255,255,255,0.6),
+        750px 320px 0 rgba(255,255,255,0.5),
+        850px 480px 0 rgba(255,255,255,0.8),
+        950px 360px 0 rgba(255,255,255,0.6),
+        1050px 430px 0 rgba(255,255,255,0.7),
+        1150px 340px 0 rgba(255,255,255,0.5),
+        1250px 500px 0 rgba(255,255,255,0.6),
+        1350px 370px 0 rgba(255,255,255,0.8),
+        1450px 290px 0 rgba(255,255,255,0.7),
+        /* Layer 1 more */
+        80px 550px 0 rgba(255,255,255,0.6),
+        180px 600px 0 rgba(255,255,255,0.5),
+        280px 520px 0 rgba(255,255,255,0.7),
+        380px 650px 0 rgba(255,255,255,0.8),
+        480px 570px 0 rgba(255,255,255,0.6),
+        580px 620px 0 rgba(255,255,255,0.4),
+        680px 540px 0 rgba(255,255,255,0.7),
+        780px 680px 0 rgba(255,255,255,0.5),
+        880px 590px 0 rgba(255,255,255,0.8),
+        980px 640px 0 rgba(255,255,255,0.6),
+        1080px 560px 0 rgba(255,255,255,0.7),
+        1180px 700px 0 rgba(255,255,255,0.5),
+        1280px 530px 0 rgba(255,255,255,0.6),
+        1380px 670px 0 rgba(255,255,255,0.8),
+        70px 750px 0 rgba(255,255,255,0.5),
+        170px 800px 0 rgba(255,255,255,0.7),
+        270px 720px 0 rgba(255,255,255,0.6),
+        370px 850px 0 rgba(255,255,255,0.8),
+        /* Gold-tinted stars */
+        60px 170px 0 rgba(245,158,11,0.5),
+        320px 240px 0 rgba(245,158,11,0.4),
+        760px 130px 0 rgba(245,158,11,0.5),
+        1040px 200px 0 rgba(245,158,11,0.4);
+    animation: twinkle1 3s ease-in-out infinite alternate;
+}
+
+.starfield::after {
+    content: '';
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    border-radius: 50%;
+    background: white;
+    top: 25%;
+    left: 8%;
+    box-shadow:
+        /* Stars layer 2 - smaller, different positions */
+        80px 50px 0 rgba(255,255,255,0.9),
+        180px 90px 0 rgba(255,255,255,0.5),
+        280px 30px 0 rgba(255,255,255,0.6),
+        380px 140px 0 rgba(255,255,255,0.8),
+        480px 70px 0 rgba(255,255,255,0.4),
+        580px 110px 0 rgba(255,255,255,0.7),
+        680px 40px 0 rgba(255,255,255,0.5),
+        780px 160px 0 rgba(255,255,255,0.9),
+        880px 60px 0 rgba(255,255,255,0.6),
+        980px 130px 0 rgba(255,255,255,0.7),
+        1080px 20px 0 rgba(255,255,255,0.8),
+        1180px 100px 0 rgba(255,255,255,0.5),
+        1280px 150px 0 rgba(255,255,255,0.6),
+        1380px 55px 0 rgba(255,255,255,0.7),
+        /* Layer 2 down */
+        30px 250px 0 rgba(255,255,255,0.5),
+        130px 330px 0 rgba(255,255,255,0.7),
+        230px 280px 0 rgba(255,255,255,0.6),
+        330px 390px 0 rgba(255,255,255,0.8),
+        430px 310px 0 rgba(255,255,255,0.4),
+        530px 410px 0 rgba(255,255,255,0.7),
+        630px 350px 0 rgba(255,255,255,0.5),
+        730px 440px 0 rgba(255,255,255,0.9),
+        830px 370px 0 rgba(255,255,255,0.6),
+        930px 460px 0 rgba(255,255,255,0.7),
+        1030px 330px 0 rgba(255,255,255,0.8),
+        1130px 420px 0 rgba(255,255,255,0.5),
+        1230px 360px 0 rgba(255,255,255,0.6),
+        1330px 490px 0 rgba(255,255,255,0.7),
+        /* Layer 2 more down */
+        40px 510px 0 rgba(255,255,255,0.6),
+        140px 590px 0 rgba(255,255,255,0.5),
+        240px 540px 0 rgba(255,255,255,0.7),
+        340px 630px 0 rgba(255,255,255,0.8),
+        440px 560px 0 rgba(255,255,255,0.6),
+        540px 660px 0 rgba(255,255,255,0.4),
+        640px 580px 0 rgba(255,255,255,0.7),
+        740px 670px 0 rgba(255,255,255,0.5),
+        840px 610px 0 rgba(255,255,255,0.9),
+        940px 690px 0 rgba(255,255,255,0.6),
+        1040px 530px 0 rgba(255,255,255,0.7),
+        1140px 640px 0 rgba(255,255,255,0.5),
+        1240px 570px 0 rgba(255,255,255,0.6),
+        1340px 710px 0 rgba(255,255,255,0.8),
+        /* Blue-tinted stars */
+        420px 200px 0 rgba(59,130,246,0.4),
+        920px 260px 0 rgba(59,130,246,0.3),
+        1120px 50px 0 rgba(59,130,246,0.4);
+    animation: twinkle2 4s ease-in-out infinite alternate;
+}
+
+@keyframes twinkle1 {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+}
+
+@keyframes twinkle2 {
+    0% { opacity: 0.8; }
+    33% { opacity: 0.4; }
+    66% { opacity: 0.9; }
+    100% { opacity: 0.5; }
+}
+
+/* Nebula-like gradient overlay */
+.starfield-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse at 20% 50%, rgba(139, 92, 246, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 80%, rgba(245, 158, 11, 0.03) 0%, transparent 50%);
+}

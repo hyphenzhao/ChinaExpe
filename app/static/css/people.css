@@ -1,0 +1,96 @@
+/* ===== People Management Page ===== */
+.people-container {
+    max-width: 900px;
+    margin: 1.5rem auto;
+    padding: 0 1rem;
+    height: calc(100vh - 3rem);
+    display: flex;
+    flex-direction: column;
+}
+
+.people-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.people-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.person-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+    transition: all var(--transition);
+}
+
+.person-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+.person-card-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+.person-card-id {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.person-chart-badges {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.chart-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+}
+.chart-badge.has { color: var(--accent-green); border-color: rgba(16,185,129,0.4); background: rgba(16,185,129,0.08); }
+.chart-badge.missing { color: var(--text-muted); opacity: 0.5; }
+
+.person-card-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+}
+.person-card-actions .btn {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.75rem;
+}
+
+/* Edit name inline */
+.edit-name-row {
+    display: flex;
+    gap: 0.375rem;
+    margin-top: 0.5rem;
+}
+.edit-name-row .input {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+/* Empty state */
+.people-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+}
+.people-empty-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+
+@media (max-width: 600px) {
+    .people-grid {
+        grid-template-columns: 1fr;
+    }
+}
