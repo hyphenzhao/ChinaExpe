@@ -112,12 +112,15 @@ function updateModeUI() {
 
     const chartOptions = document.getElementById('chart-mode-options');
 
+    const tab = document.getElementById('chart-panel-tab');
     if (AppState.mode === 'chart') {
         chartOptions.classList.remove('hidden');
+        if (tab) tab.classList.add('visible');
     } else {
         chartOptions.classList.add('hidden');
         const panel = document.getElementById('chart-panel-right');
         if (panel) { panel.classList.add('hidden'); panel.classList.add('collapsed'); }
+        if (tab) { tab.classList.remove('visible'); tab.classList.add('collapsed'); }
         const inline = document.getElementById('chart-inline-wrapper');
         if (inline) inline.remove();
         document.getElementById('chart-display').innerHTML = '';
@@ -131,7 +134,15 @@ function toggleChartDisplay() {
 
 function toggleChartPanel() {
     const panel = document.getElementById('chart-panel-right');
-    panel.classList.toggle('collapsed');
+    const tab = document.getElementById('chart-panel-tab');
+    const wasCollapsed = panel.classList.contains('collapsed');
+    if (wasCollapsed) {
+        panel.classList.remove('collapsed');
+        if (tab) tab.classList.remove('collapsed');
+    } else {
+        panel.classList.add('collapsed');
+        if (tab) tab.classList.add('collapsed');
+    }
 }
 
 let _lastWide = null;
@@ -149,12 +160,16 @@ function _getChartContainer() {
     if (_isWideScreen()) {
         const panel = document.getElementById('chart-panel-right');
         panel.classList.remove('hidden', 'collapsed');
+        const tab = document.getElementById('chart-panel-tab');
+        if (tab) { tab.classList.add('visible'); tab.classList.remove('collapsed'); }
         const inline = document.getElementById('chart-inline-wrapper');
         if (inline) inline.remove();
         return document.getElementById('chart-display-wrapper-panel');
     } else {
         const panel = document.getElementById('chart-panel-right');
         panel.classList.add('hidden');
+        const tab = document.getElementById('chart-panel-tab');
+        if (tab) tab.classList.remove('visible');
         let wrapper = document.getElementById('chart-inline-wrapper');
         if (!wrapper) {
             wrapper = document.createElement('div');
@@ -244,6 +259,8 @@ function clearChartDisplay() {
     document.getElementById('chart-display').innerHTML = '';
     const panel = document.getElementById('chart-panel-right');
     if (panel) { panel.classList.add('hidden'); panel.classList.add('collapsed'); }
+    const tab = document.getElementById('chart-panel-tab');
+    if (tab) { tab.classList.remove('visible'); tab.classList.add('collapsed'); }
     const inline = document.getElementById('chart-inline-wrapper');
     if (inline) inline.remove();
 }

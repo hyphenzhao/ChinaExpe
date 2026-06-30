@@ -5,39 +5,65 @@
     width: 100vw;
 }
 
-/* Right chart panel — landscape */
+/* Right chart panel tab — always visible toggle */
+.chart-panel-tab {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    min-width: 22px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    transition: all var(--transition);
+    flex-shrink: 0;
+    writing-mode: vertical-rl;
+    user-select: none;
+}
+.chart-panel-tab:hover {
+    color: var(--accent-gold);
+    background: var(--bg-card-hover);
+}
+.chart-panel-tab.visible {
+    display: flex;
+}
+
+/* Right chart panel — landscape: flex child, pushes chat area */
 .chart-panel-right {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
     width: 620px;
+    min-width: 620px;
+    flex-shrink: 0;
     background: var(--bg-secondary);
     border-left: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    z-index: 40;
-    transition: transform 0.3s ease;
+    transition: width 0.3s ease, min-width 0.3s ease;
 }
 .chart-panel-right.collapsed {
-    transform: translateX(100%);
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    border-left: none;
 }
-.chart-panel-right .chart-panel-toggle {
-    justify-content: flex-end;
-    padding: 0.4rem 0.6rem;
-}
-.chart-panel-right.collapsed .chart-panel-toggle #chart-panel-toggle-icon {
+/* When collapsed, flip the tab arrow */
+.chart-panel-tab.collapsed #chart-panel-toggle-icon {
     transform: rotate(180deg);
 }
 #chart-panel-toggle-icon {
-    font-size: 0.7rem;
-    transition: transform 0.2s ease;
     display: inline-block;
+    transition: transform 0.2s ease;
 }
 
 @media (orientation: portrait) {
     .chart-panel-right {
+        display: none !important;
+    }
+    .chart-panel-tab {
         display: none !important;
     }
 }

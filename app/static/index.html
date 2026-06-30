@@ -150,11 +150,12 @@
                     </div>
                 </main>
 
-                <!-- Chart panel (right side on landscape, hidden on portrait) -->
+                <!-- Chart panel tab — always visible toggle -->
+                <div class="chart-panel-tab" id="chart-panel-tab" onclick="toggleChartPanel()" title="展开/收起命盘">
+                    <span id="chart-panel-toggle-icon">◀</span>
+                </div>
+                <!-- Chart panel (right side, hidden on portrait) -->
                 <aside id="chart-panel-right" class="chart-panel-right hidden">
-                    <button class="chart-toggle-btn chart-panel-toggle" onclick="toggleChartPanel()">
-                        <span id="chart-panel-toggle-icon">◀</span>
-                    </button>
                     <div id="chart-display-wrapper-panel">
                         <div id="chart-display" class="chart-display"></div>
                     </div>
@@ -244,12 +245,12 @@
         <div class="shishen-popup hidden" id="shishen-popup"></div>
     </div>
 
-    <script src="/js/state.js?v=32"></script>
-    <script src="/js/app.js?v=32"></script>
-    <script src="/js/config.js?v=32"></script>
-    <script src="/js/chat.js?v=32"></script>
-    <script src="/js/chart-ziwei.js?v=32"></script>
-    <script src="/js/chart-shishen.js?v=32"></script>
-    <script src="/js/people.js?v=32"></script>
+    <script src="/js/state.js?v=33"></script>
+    <script src="/js/app.js?v=33"></script>
+    <script src="/js/config.js?v=33"></script>
+    <script src="/js/chat.js?v=33"></script>
+    <script src="/js/chart-ziwei.js?v=33"></script>
+    <script src="/js/chart-shishen.js?v=33"></script>
+    <script src="/js/people.js?v=33"></script>
 </body>
 </html>
