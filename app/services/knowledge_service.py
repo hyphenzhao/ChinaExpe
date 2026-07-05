@@ -153,6 +153,8 @@ class KnowledgeService:
                 cleaned.append({
                     "content": content[:4000],
                     "source": source,
+                    "title": r.get("title", ""),
+                    "category": r.get("category", ""),
                     "_distance": r.get("_distance", 0),
                 })
 
@@ -164,14 +166,28 @@ class KnowledgeService:
             return []
 
     def format_rag_context(self, results: list[dict]) -> str:
-        """Format RAG results as context for the system prompt."""
+        """Format RAG results as context for the system prompt.
+
+        Includes source title and URL so the LLM can cite original articles.
+        """
         if not results:
             return ""
 
-        parts = ["\n## 知识库参考内容\n"]
+        parts = ["\n## 知识库参考内容（紫微麦原文）\n"]
+        parts.append("以下是从紫微麦知识库检索到的相关原文片段，回答时请先引用相关原文，再结合命盘解读。\n")
         for i, r in enumerate(results[:5], 1):
+            title = r.get("title", "")
+            source = r.get("source", "")
             content = r.get("content", "")[:3000]
-            parts.append(f"**[参考{i}]** {content}\n")
+
+            # Build citation header
+            cite = f"**[原文{i}]**"
+            if title:
+                cite += f" 《{title}》"
+            if source:
+                cite += f" ({source})"
+
+            parts.append(f"{cite}\n{content}\n")
         return "\n".join(parts)
 
 
