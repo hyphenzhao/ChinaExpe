@@ -4,6 +4,18 @@ from pathlib import Path
 from typing import Optional
 
 CHART_BASE = Path(__file__).resolve().parent.parent.parent / "data" / "charts"
+# Fallback to old external path if project directory is empty
+_CHART_BASE_FALLBACK = Path("/Volumes/Storage/OpenClaw-Space/命盘")
+
+def _resolve_person_dir(person: str) -> Optional[Path]:
+    """Resolve a person's chart directory, trying project path first then fallback."""
+    primary = CHART_BASE / person
+    if primary.is_dir():
+        return primary
+    fallback = _CHART_BASE_FALLBACK / person
+    if fallback.is_dir():
+        return fallback
+    return None
 
 # Standard Ziwei Doushu grid layout:
 # The 12 earthly branches have fixed positions in a 4x4 grid.
@@ -39,42 +51,48 @@ def _get_grid_position(stem_branch: str) -> tuple[int, int]:
 
 
 def list_people() -> list[dict]:
-    """List all people with charts in the 命盘 directory."""
-    if not CHART_BASE.exists():
-        return []
-
+    """List all people with charts, scanning both project and fallback paths."""
     people = []
-    for folder in sorted(CHART_BASE.iterdir()):
-        if not folder.is_dir():
+    seen = set()
+
+    for base in [CHART_BASE, _CHART_BASE_FALLBACK]:
+        if not base.exists():
             continue
-        name = folder.name
-        ziwei_json = folder / "ziwei.json"
-        shishen_json = folder / "shishen.json"
-        has_ziwei = ziwei_json.exists()
-        has_shishen = shishen_json.exists()
+        for folder in sorted(base.iterdir()):
+            if not folder.is_dir():
+                continue
+            name = folder.name
+            if name in seen:
+                continue
+            seen.add(name)
 
-        display_name = name
-        if has_ziwei:
-            try:
-                data = json.loads(ziwei_json.read_text(encoding="utf-8"))
-                display_name = data.get("basic_info", {}).get("display_name", name)
-            except Exception:
-                pass
+            ziwei_json = folder / "ziwei.json"
+            shishen_json = folder / "shishen.json"
+            has_ziwei = ziwei_json.exists()
+            has_shishen = shishen_json.exists()
 
-        people.append({
-            "name": name,
-            "has_ziwei": has_ziwei,
-            "has_shishen": has_shishen,
-            "display_name": display_name,
-        })
+            display_name = name
+            if has_ziwei:
+                try:
+                    data = json.loads(ziwei_json.read_text(encoding="utf-8"))
+                    display_name = data.get("basic_info", {}).get("display_name", name)
+                except Exception:
+                    pass
+
+            people.append({
+                "name": name,
+                "has_ziwei": has_ziwei,
+                "has_shishen": has_shishen,
+                "display_name": display_name,
+            })
 
     return people
 
 
 def get_person_meta(person: str) -> Optional[dict]:
     """Get metadata about a person's available charts."""
-    folder = CHART_BASE / person
-    if not folder.is_dir():
+    folder = _resolve_person_dir(person)
+    if not folder:
         return None
 
     ziwei_json = folder / "ziwei.json"
@@ -91,7 +109,10 @@ def get_person_meta(person: str) -> Optional[dict]:
 
 def get_ziwei_grid(person: str) -> Optional[dict]:
     """Read ziwei.json and transform into frontend-friendly grid data."""
-    filepath = CHART_BASE / person / "ziwei.json"
+    folder = _resolve_person_dir(person)
+    if not folder:
+        return None
+    filepath = folder / "ziwei.json"
     if not filepath.exists():
         return None
 
@@ -213,7 +234,10 @@ def get_ziwei_grid(person: str) -> Optional[dict]:
 
 def get_shishen_data(person: str) -> Optional[dict]:
     """Read shishen.json and transform into frontend-friendly data."""
-    filepath = CHART_BASE / person / "shishen.json"
+    folder = _resolve_person_dir(person)
+    if not folder:
+        return None
+    filepath = folder / "shishen.json"
     if not filepath.exists():
         return None
 
