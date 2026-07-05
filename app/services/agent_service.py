@@ -47,8 +47,8 @@ class AgentService:
         messages = []
         meta = {"skills_loaded": [], "rag_results": 0, "chart_loaded": False}
 
-        # 1. Build system prompt
-        system_content = await self._build_system_prompt(mode, person, meta)
+        # 1. Build system prompt (pass user_message for RAG query)
+        system_content = await self._build_system_prompt(mode, person, user_message, meta)
 
         messages.append({"role": "system", "content": system_content})
 
@@ -67,14 +67,18 @@ class AgentService:
 
         return messages, meta
 
-    async def _build_system_prompt(self, mode: str, person: Optional[str], meta: dict) -> str:
-        """Build the system prompt based on mode. Populates meta with usage info."""
+    async def _build_system_prompt(self, mode: str, person: Optional[str], user_message: str, meta: dict) -> str:
+        """Build the system prompt based on mode. Populates meta with usage info.
+
+        The user_message is used as the PRIMARY query for RAG retrieval so
+        that knowledge base results are actually relevant to the question.
+        """
         if mode == "theory":
             system = f"## 当前时间\n{_now_context()}\n\n" + get_skill_context_for_prompt("theory")
             meta["skills_loaded"] = ["通用玄学"]
-            # Also try RAG for theory mode based on user question
+            # RAG: use user's actual question for search
             if knowledge_service.is_available():
-                results = await knowledge_service.query(system[:200], limit=2)
+                results = await knowledge_service.query(user_message, limit=8)
                 if results:
                     rag_context = knowledge_service.format_rag_context(results)
                     meta["rag_results"] = len(results)
@@ -97,12 +101,12 @@ class AgentService:
             if chart_context:
                 meta["chart_loaded"] = True
 
-        # Build RAG context
+        # Build RAG context — combine user question with chart structure
         rag_context = ""
         if knowledge_service.is_available():
-            rag_query = self._build_rag_query(chart_type, person)
+            rag_query = self._build_rag_query(chart_type, person, user_message)
             if rag_query:
-                results = await knowledge_service.query(rag_query, limit=3)
+                results = await knowledge_service.query(rag_query, limit=8)
                 if results:
                     rag_context = knowledge_service.format_rag_context(results)
                     meta["rag_results"] = len(results)
@@ -153,30 +157,40 @@ class AgentService:
                 return ""
             return json.dumps(data, ensure_ascii=False, indent=2)
 
-    def _build_rag_query(self, chart_type: str, person: str) -> Optional[str]:
-        """Build a RAG query from chart features."""
-        if not person:
-            return None
-        if chart_type == "ziwei":
-            grid = get_ziwei_grid(person)
-            if not grid:
-                return None
-            # Build query from ming palace stars
-            ming_palace = None
-            for p in grid.get("palaces", []):
-                if p.get("name") == "命宫":
-                    ming_palace = p
-                    break
-            if ming_palace:
-                star_names = [s["name"] for s in ming_palace.get("stars", [])[:3]]
-                return f"紫微斗数 命宫 {' '.join(star_names)} 解析"
-        else:
-            data = get_shishen_data(person)
-            if not data:
-                return None
-            day_master = data.get("day_master", "")
-            return f"八字 日主{day_master} 十神 解析"
+    def _build_rag_query(self, chart_type: str, person: str, user_message: str = "") -> Optional[str]:
+        """Build a RAG query combining the user's question with chart structure.
 
+        The user's actual question is the primary signal for vector search.
+        Chart structure (palace stars, day master) is added as supplementary
+        context to improve relevance.
+        """
+        # Build chart context suffix
+        chart_suffix = ""
+        if person and chart_type == "ziwei":
+            grid = get_ziwei_grid(person)
+            if grid:
+                # Collect star names from all palaces for broader context
+                all_stars = set()
+                ming_stars = []
+                for p in grid.get("palaces", []):
+                    for s in p.get("stars", []):
+                        all_stars.add(s["name"])
+                    if p.get("name") == "命宫":
+                        ming_stars = [s["name"] for s in p.get("stars", [])[:5]]
+                if ming_stars:
+                    chart_suffix = f" 命宫{' '.join(ming_stars)}"
+        elif person and chart_type == "shishen":
+            data = get_shishen_data(person)
+            if data:
+                day_master = data.get("day_master", "")
+                if day_master:
+                    chart_suffix = f" 日主{day_master}"
+
+        # User question is the primary query; chart context supplements it
+        if user_message:
+            return f"{user_message}{chart_suffix}"
+        elif chart_suffix:
+            return f"{chart_type} {chart_suffix} 解析"
         return None
 
     def _build_user_message(

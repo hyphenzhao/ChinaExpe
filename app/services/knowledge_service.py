@@ -84,7 +84,7 @@ class KnowledgeService:
             cleaned = []
             for r in results:
                 cleaned.append({
-                    "content": r.get("chunk", r.get("content", r.get("text", "")))[:2000],
+                    "content": r.get("content", r.get("chunk", r.get("text", "")))[:4000],
                     "source": r.get("source", r.get("url", "")),
                     "_distance": r.get("_distance", 0),
                 })
@@ -99,7 +99,7 @@ class KnowledgeService:
 
         parts = ["\n## 知识库参考内容\n"]
         for i, r in enumerate(results[:5], 1):
-            content = r.get("content", "")[:1500]
+            content = r.get("content", "")[:3000]
             parts.append(f"**[参考{i}]** {content}\n")
         return "\n".join(parts)
 
