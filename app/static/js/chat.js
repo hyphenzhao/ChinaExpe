@@ -162,8 +162,16 @@ function _getChartContainer() {
         panel.classList.remove('hidden', 'collapsed');
         const tab = document.getElementById('chart-panel-tab');
         if (tab) { tab.classList.add('visible'); tab.classList.remove('collapsed'); }
+        // Move chart-display back into panel wrapper before removing inline wrapper
         const inline = document.getElementById('chart-inline-wrapper');
-        if (inline) inline.remove();
+        if (inline) {
+            const cd = document.getElementById('chart-display');
+            const panelWrapper = document.getElementById('chart-display-wrapper-panel');
+            if (cd && panelWrapper && cd.closest('#chart-inline-wrapper')) {
+                panelWrapper.appendChild(cd);
+            }
+            inline.remove();
+        }
         return document.getElementById('chart-display-wrapper-panel');
     } else {
         const panel = document.getElementById('chart-panel-right');
@@ -223,6 +231,10 @@ async function loadAndDisplayChart() {
 
     const container = _getChartContainer();
     const chartDisplay = document.getElementById('chart-display');
+    if (!chartDisplay) {
+        console.error('chart-display element not found in DOM');
+        return;
+    }
     if (chartDisplay.parentElement !== container) {
         container.appendChild(chartDisplay);
     }
@@ -256,13 +268,21 @@ async function loadAndDisplayChart() {
 }
 
 function clearChartDisplay() {
-    document.getElementById('chart-display').innerHTML = '';
+    const cd = document.getElementById('chart-display');
+    if (cd) cd.innerHTML = '';
     const panel = document.getElementById('chart-panel-right');
     if (panel) { panel.classList.add('hidden'); panel.classList.add('collapsed'); }
     const tab = document.getElementById('chart-panel-tab');
     if (tab) { tab.classList.remove('visible'); tab.classList.add('collapsed'); }
+    // Move chart-display back to panel wrapper before removing inline wrapper
     const inline = document.getElementById('chart-inline-wrapper');
-    if (inline) inline.remove();
+    if (inline) {
+        if (cd && cd.closest('#chart-inline-wrapper')) {
+            const panelWrapper = document.getElementById('chart-display-wrapper-panel');
+            if (panelWrapper) panelWrapper.appendChild(cd);
+        }
+        inline.remove();
+    }
 }
 
 /* ===== People List ===== */
