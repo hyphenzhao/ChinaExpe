@@ -1,0 +1,4 @@
+# Ignore all actual content files — only README.md is committed
+*
+!README.md
+!.gitignore

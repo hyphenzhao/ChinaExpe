@@ -5,6 +5,7 @@ from typing import Optional
 
 from .skill_loader import get_skill_context_for_prompt
 from .knowledge_service import knowledge_service
+from .local_knowledge import local_knowledge
 from .chart_service import get_ziwei_grid, get_shishen_data
 
 # China timezone
@@ -45,7 +46,7 @@ class AgentService:
             (messages, meta) where meta contains info about what was loaded
         """
         messages = []
-        meta = {"skills_loaded": [], "rag_results": 0, "chart_loaded": False}
+        meta = {"skills_loaded": [], "rag_results": 0, "local_results": 0, "chart_loaded": False}
 
         # 1. Build system prompt (pass user_message for RAG query)
         system_content = await self._build_system_prompt(mode, person, user_message, meta)
@@ -76,9 +77,16 @@ class AgentService:
         if mode == "theory":
             system = f"## 当前时间\n{_now_context()}\n\n" + get_skill_context_for_prompt("theory")
             meta["skills_loaded"] = ["通用玄学"]
-            # RAG: use user's actual question for search
+            # Local knowledge base (priority — complete articles)
+            if local_knowledge.is_available():
+                local_results = local_knowledge.search(user_message, limit=5)
+                if local_results:
+                    local_ctx = local_knowledge.format_context(local_results)
+                    meta["local_results"] = len(local_results)
+                    system += "\n" + local_ctx
+            # LanceDB RAG (supplementary)
             if knowledge_service.is_available():
-                results = await knowledge_service.query(user_message, limit=8)
+                results = await knowledge_service.query(user_message, limit=5)
                 if results:
                     rag_context = knowledge_service.format_rag_context(results)
                     meta["rag_results"] = len(results)
@@ -101,12 +109,20 @@ class AgentService:
             if chart_context:
                 meta["chart_loaded"] = True
 
-        # Build RAG context — combine user question with chart structure
+        # Build local knowledge context (priority — complete articles)
+        local_context = ""
+        if local_knowledge.is_available():
+            local_results = local_knowledge.search(user_message, limit=5)
+            if local_results:
+                local_context = local_knowledge.format_context(local_results)
+                meta["local_results"] = len(local_results)
+
+        # Build LanceDB RAG context (supplementary)
         rag_context = ""
         if knowledge_service.is_available():
             rag_query = self._build_rag_query(chart_type, person, user_message)
             if rag_query:
-                results = await knowledge_service.query(rag_query, limit=8)
+                results = await knowledge_service.query(rag_query, limit=5)
                 if results:
                     rag_context = knowledge_service.format_rag_context(results)
                     meta["rag_results"] = len(results)
@@ -118,6 +134,8 @@ class AgentService:
             parts.append("\n## 当前命盘数据\n")
             parts.append(chart_context)
 
+        if local_context:
+            parts.append(local_context)
         if rag_context:
             parts.append(rag_context)
 
