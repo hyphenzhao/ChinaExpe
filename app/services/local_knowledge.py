@@ -15,6 +15,39 @@ _KB_PATH = Path(__file__).resolve().parent.parent.parent / "knowledge_base"
 _INDEX_PATH = _KB_PATH / "index.json"
 
 # Map English directory names to Chinese terms for cross-language matching
+# Directories and files to exclude from search — these are dictionary/overview
+# pages or changelogs that match every query and drown out focused articles.
+_EXCLUDE_DIRS = {
+    "twelve-palaces",       # 12-palace overview — lists every palace's stars
+    "progress-schedule",    # website changelog
+    "pai-ming-pan",         # software release notes
+    "website-privacy-policy",  # privacy policy
+    "about-abcziweimy-v3",  # old version changelog
+    "about-abcziweimy-v5",  # version changelog
+    "yi-jing",              # I-Ching, not ziwei
+    "uncategorized",        # miscellaneous
+    "online-resources",     # link collections
+    "home",                 # homepage
+    "cases-study",          # case studies
+    "index-case-study",
+    "index-zi-wei-dou-shu-articles",
+    "index-zwds-stars-in-career-palace",
+    "index-zwds-stars-in-life-palace",
+    "index-zwds-stars-in-spouse-palace",
+    "index-zwds-stars-in-wealth-palace",
+}
+
+# Specific catch-all files that match too many queries
+_EXCLUDE_FILES = {
+    "love-and-marriage_what-man-cannot-marry.txt",           # 什么男人不能嫁 — huge, covers all stars
+    "love-and-marriage_what-kind-of-seductive-beauty-are-you.txt",  # 诱人尤物 — covers 14 stars
+    "love-and-marriage_tao-hua-star-note-9.txt",             # 桃花开几朵 — covers all stars
+    "love-and-marriage_what-is-true-love.txt",               # 性爱分离 — broad
+    "zi-wei-dou-shu-portfolio_wu-xing-ju-note-1.txt",       # 五行局 — covers all bureaus
+    "zi-wei-dou-shu-portfolio_zwds-guide-zi-wei-dou-shu-basics-11.txt",  # basics overview
+    "zi-wei-dou-shu-portfolio_zwds-guide-ming-ju-da-xian-xiao-xian-liu-nian.txt",  # overview
+}
+
 _DIR_CN_MAP = {
     "palace-life": "命宫",
     "palace-wealth": "财帛宫",
@@ -190,12 +223,18 @@ class LocalKnowledgeService:
     # ── file scanning ───────────────────────────────────────────
 
     def _scan_files(self) -> list[Path]:
-        """List all readable files in knowledge_base/."""
+        """List all readable files in knowledge_base/, excluding noise dirs."""
         files = []
         if _KB_PATH.exists():
             for ext in ["*.txt", "*.md"]:
                 for f in _KB_PATH.rglob(ext):
                     if f.name in ("README.md",) or f.name.startswith("index."):
+                        continue
+                    # Exclude known noise directories
+                    if f.parent.name in _EXCLUDE_DIRS:
+                        continue
+                    # Exclude known catch-all files
+                    if f.name in _EXCLUDE_FILES:
                         continue
                     if f.parent.name.startswith("."):
                         continue

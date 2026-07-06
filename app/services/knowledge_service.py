@@ -15,6 +15,11 @@ EMBED_MODEL = "bge-m3"
 _LOW_QUALITY_SOURCES = {
     "progress-schedule",
     "pai-ming-pan",
+    "twelve-palaces",           # 12-palace overview — matches every query
+    "website-privacy-policy",   # privacy policy
+    "about-abcziweimy",         # version changelogs
+    "wu-xing-ju-note",          # 五行局 overview
+    "zwds-guide",               # basics guide overviews
 }
 
 # Content patterns that indicate changelog/update text rather than analytical articles.
