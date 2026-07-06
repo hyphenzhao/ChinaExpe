@@ -3,7 +3,6 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from .skill_loader import get_skill_context_for_prompt
 from .knowledge_service import knowledge_service
 from .local_knowledge import local_knowledge
 from .chart_service import get_ziwei_grid, get_shishen_data
@@ -27,6 +26,37 @@ def _now_context() -> str:
         f"农历年份：{lunar_year}年\n"
         f"星期：{'一二三四五六日'[now.weekday()]}"
     )
+
+
+# Slim role prompt — skills/knowledge loaded on-demand via tools
+_SLIM_ROLE_PROMPT = (
+    "你是一位精通紫微斗数、子平命理（八字十神）的专业玄学助手。\n"
+    "你可以使用以下工具来获取需要的信息：\n"
+    "- **search_knowledge**: 搜索本地知识库获取原文资料（紫微麦文章、古籍经典等）\n"
+    "- **read_skill**: 读取命理技能文件（星曜表、四化规则、排盘方法等）\n"
+    "- **get_chart**: 获取命盘数据\n\n"
+    "工作方式：\n"
+    "1. 先理解用户的问题，确定需要查什么\n"
+    "2. 使用工具搜索相关知识库原文和技能资料\n"
+    "3. 引用原文，结合命盘数据给出专业解读\n"
+    "4. 如果搜索结果不相关，换关键词再搜\n\n"
+    "重要：回答时先引用原文片段（标明出处），再对照命盘解读。不要凭空断言。\n"
+)
+
+_TONE_SECTION = (
+    "\n## 回答风格与边界\n"
+    "- 客观平衡：吉凶如实解读，不刻意只说好话\n"
+    "- 引用原文：搜索到原文后先引用再解读\n"
+    "- 凶象转译：凶象转译为风险、课题，不恐吓\n"
+    "- 解释边界：命盘展示倾向而非绝对命定\n"
+    "- 专业清晰：术语首次出现时用现代汉语解释\n"
+)
+
+_TOOLS_HINT = (
+    "\n## 可用数据源\n"
+    "- 本地知识库（紫微麦完整原文）: {local_avail}\n"
+    "- 向量知识库（LanceDB）: {lancedb_avail}\n"
+)
 
 
 class AgentService:
@@ -68,116 +98,100 @@ class AgentService:
 
         return messages, meta
 
-    async def _build_system_prompt(self, mode: str, person: Optional[str], user_message: str, meta: dict) -> str:
-        """Build the system prompt based on mode. Populates meta with usage info.
+    async def _build_system_prompt(
+        self, mode: str, person: Optional[str], user_message: str, meta: dict
+    ) -> str:
+        """Build a slim system prompt (~3K chars).
 
-        The user_message is used as the PRIMARY query for RAG retrieval so
-        that knowledge base results are actually relevant to the question.
+        Skills and knowledge are loaded on-demand via tool calls, not eagerly
+        stuffed into the prompt. Only essential context (time, role, tone,
+        chart data) is included upfront.
         """
-        if mode == "theory":
-            system = f"## 当前时间\n{_now_context()}\n\n" + get_skill_context_for_prompt("theory")
-            meta["skills_loaded"] = ["通用玄学"]
-            # Local knowledge base (priority — complete articles)
-            if local_knowledge.is_available():
-                local_results, keywords = local_knowledge.search(user_message, limit=5)
-                if local_results:
-                    local_ctx = local_knowledge.format_context(local_results, keywords)
-                    meta["local_results"] = len(local_results)
-                    meta["local_keywords"] = keywords
-                    system += "\n" + local_ctx
-            # LanceDB RAG (supplementary)
-            if knowledge_service.is_available():
-                results = await knowledge_service.query(user_message, limit=5)
-                if results:
-                    rag_context = knowledge_service.format_rag_context(results)
-                    meta["rag_results"] = len(results)
-                    system += "\n" + rag_context
-            return system
+        chart_type = None
+        if mode == "chart_ziwei":
+            chart_type = "ziwei"
+        elif mode == "chart_shishen":
+            chart_type = "shishen"
 
-        chart_type = "ziwei" if mode == "chart_ziwei" else "shishen"
-        if chart_type == "ziwei":
-            meta["skills_loaded"] = ["紫微斗数"]
-        else:
-            meta["skills_loaded"] = ["八字大师", "子平正解"]
+        parts = [
+            f"## 当前时间\n{_now_context()}\n",
+            _SLIM_ROLE_PROMPT,
+        ]
 
-        # Load skill context
-        skill_context = get_skill_context_for_prompt(chart_type)
-
-        # Build chart data context
-        chart_context = ""
-        if person:
+        # Chart data — still included eagerly since it's essential context
+        if chart_type and person:
             chart_context = self._get_chart_context(chart_type, person)
             if chart_context:
                 meta["chart_loaded"] = True
+                parts.append("\n## 当前命盘数据\n")
+                parts.append(chart_context)
 
-        # Build local knowledge context (priority — complete articles)
-        local_context = ""
-        if local_knowledge.is_available():
-            local_results, keywords = local_knowledge.search(user_message, limit=5)
-            if local_results:
-                local_context = local_knowledge.format_context(local_results, keywords)
-                meta["local_results"] = len(local_results)
-                meta["local_keywords"] = keywords
+        # Tone and style guidance
+        parts.append(_TONE_SECTION)
 
-        # Build LanceDB RAG context (supplementary)
-        rag_context = ""
-        if knowledge_service.is_available():
-            rag_query = self._build_rag_query(chart_type, person, user_message)
-            if rag_query:
-                results = await knowledge_service.query(rag_query, limit=5)
-                if results:
-                    rag_context = knowledge_service.format_rag_context(results)
-                    meta["rag_results"] = len(results)
-
-        # Assemble
-        parts = [f"## 当前时间\n{_now_context()}\n", skill_context]
-
-        if chart_context:
-            parts.append("\n## 当前命盘数据\n")
-            parts.append(chart_context)
-
-        if local_context:
-            parts.append(local_context)
-        if rag_context:
-            parts.append(rag_context)
-
-        parts.append(
-            "\n\n## 回答风格与边界（最高优先级）\n"
-            "- **客观平衡**：吉凶都要如实解读，不要只说好听的话，也不要刻意吓人，要客观中立\n"
-            "- **引用原文优先**：如果系统提示中包含知识库参考内容或技能参考文件，请**先引用原文片段**，再结合命盘数据进行解读。用「紫微麦原文」或「根据经典」来标明引用来源\n"
-            "- **凶象转译**：凶象、煞忌、冲克要转译为风险、课题、代价、需要注意之处，而非恐吓式、宿命式表述\n"
-            "- **解释边界**：命盘展示的是倾向、结构与课题，不是不可改变的命令；不说「注定如此」「无法改变」\n"
-            "- **结论依据**：每个判断都要有推演过程支撑，先分析命盘结构再下结论，不凭空断言\n"
-            "- **专业清晰**：术语第一次出现时用现代汉语解释，不堆砌古诀，不空泛玄谈\n"
-            "\n"
-            "## 回答格式要求\n"
-            "- 涉及宫位、星曜、四化、十神、五行等结构化信息时，**默认使用 Markdown 表格**呈现\n"
-            "- 如用户明确要求不用表格，则尊重用户偏好\n"
-            "- 所有时间计算以当前日期为基准，务必使用上面提供的当前时间\n"
-            "- 回复结构：如果知识库提供了相关原文，采用「**引用原文 → 命盘对照 → 综合解读**」的三段式结构\n"
-            "- 请基于以上技能知识、命盘数据和知识库参考，为用户提供专业、客观、有据的玄学解析。\n"
-            "\n"
-            "> 温馨提示：命理属于中华传统文化系统，本解读用于提供自我观察、关系理解与人生规划的参考视角。"
-            "命盘呈现的是结构与倾向，不是不可改变的命令；后天选择、环境与持续行动同样重要。"
-            "重大决策仍需结合现实条件，理性判断。"
-        )
+        # Available tools hint
+        parts.append(_TOOLS_HINT.format(
+            local_avail="✅" if local_knowledge.is_available() else "❌",
+            lancedb_avail="✅" if knowledge_service.is_available() else "❌",
+        ))
 
         return "\n".join(parts)
 
     def _get_chart_context(self, chart_type: str, person: str) -> str:
-        """Get chart data as formatted context for the system prompt."""
+        """Get compact chart summary for the system prompt.
+
+        Full detailed chart data can be retrieved via get_chart tool.
+        This summary gives the LLM enough context to start analysis.
+        """
         if not person:
             return ""
         if chart_type == "ziwei":
             grid = get_ziwei_grid(person)
             if not grid:
                 return ""
-            return json.dumps(grid, ensure_ascii=False, indent=2)
+            basic = grid.get("basic_info", {})
+            palaces = grid.get("palaces", [])
+            lines = [
+                f"命主: {person} ({basic.get('display_name', person)})",
+                f"五行局: {basic.get('wuxing_ju', '?')}",
+                f"命主星: {basic.get('ming_zhu', '?')}  身主星: {basic.get('shen_zhu', '?')}",
+                "",
+                "十二宫概要:",
+            ]
+            for p in palaces:
+                stars = []
+                for s in p.get("stars", []):
+                    parts_list = [s["name"]]
+                    if s.get("brightness"):
+                        parts_list.append(f"({s['brightness']})")
+                    if s.get("transform"):
+                        parts_list.append(f"[{s['transform']}]")
+                    stars.append("".join(parts_list))
+                stars_str = " · ".join(stars[:5])
+                if len(p.get("stars", [])) > 5:
+                    stars_str += f" 等{len(p['stars'])}星"
+                lines.append(
+                    f"  {p.get('name','?')}({p.get('stem_branch','')}): {stars_str}"
+                )
+            return "\n".join(lines)
         else:
             data = get_shishen_data(person)
             if not data:
                 return ""
-            return json.dumps(data, ensure_ascii=False, indent=2)
+            lines = [
+                f"命主: {person}",
+                f"日主: {data.get('day_master', '?')}",
+                f"四柱天干: {' '.join(data.get('heavenly_stems', []))}",
+                f"四柱地支: {' '.join(data.get('earthly_branches', []))}",
+            ]
+            hs = data.get("hidden_stems", [])
+            if hs:
+                hs_str = " / ".join(" ".join(h) for h in hs if h)
+                lines.append(f"藏干: {hs_str}")
+            shishen = data.get("shishen", {})
+            if shishen:
+                lines.append(f"十神: {json.dumps(shishen, ensure_ascii=False)}")
+            return "\n".join(lines)
 
     def _build_rag_query(self, chart_type: str, person: str, user_message: str = "") -> Optional[str]:
         """Build a RAG query combining the user's question with chart structure.

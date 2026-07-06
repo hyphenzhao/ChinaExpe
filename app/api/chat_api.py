@@ -13,6 +13,7 @@ from ..models.chat import (
 from ..models.config import ApiConfig
 from ..services.llm_service import llm_service
 from ..services.agent_service import agent_service
+from ..services.tools import TOOLS, execute_tool
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -164,54 +165,195 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
     def _sse_event(event: str, data: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
+    # Determine if model supports tool calling (deepseek-reasoner does not)
+    model_name = session.model or config.default_model
+    supports_tools = "reasoner" not in model_name.lower()
+
     async def event_generator():
         full_response = ""
         saved = False
+        current_messages = list(messages)  # mutable copy for tool loop
+        iteration = 0
+        MAX_ITERATIONS = 5
+
         try:
-            async for token in llm_service.stream_chat(
-                messages=messages,
-                model=session.model or config.default_model,
-                provider=session.provider or config.provider,
-                ollama_host=config.ollama_host,
-                ollama_port=config.ollama_port,
-                deepseek_api_key=config.deepseek_api_key,
-                deepseek_base_url=config.deepseek_base_url,
-            ):
-                full_response += token
-                # If the LLM returned an error as its first/only content, surface as error
-                if full_response.startswith("[错误]") and len(full_response) == len(token):
-                    raise Exception(full_response)
-                yield _sse_event("token", {"type": "token", "content": token})
+            while iteration < MAX_ITERATIONS:
+                iteration += 1
+                turn_text = ""
 
-            assistant_msg = Message(role="assistant", content=full_response)
-            session.messages.append(assistant_msg)
+                # Stream with tools (if supported)
+                stream_tools = TOOLS if supports_tools else None
+                async for event in llm_service.stream_chat(
+                    messages=current_messages,
+                    model=model_name,
+                    provider=session.provider or config.provider,
+                    ollama_host=config.ollama_host,
+                    ollama_port=config.ollama_port,
+                    deepseek_api_key=config.deepseek_api_key,
+                    deepseek_base_url=config.deepseek_base_url,
+                    tools=stream_tools,
+                ):
+                    if event["type"] == "token":
+                        token = event["content"]
+                        full_response += token
+                        turn_text += token
+                        # Error detection on first token
+                        if (
+                            full_response.startswith("[错误]")
+                            and len(full_response) == len(token)
+                        ):
+                            raise Exception(full_response)
+                        yield _sse_event(
+                            "token", {"type": "token", "content": token}
+                        )
 
-            if len(session.messages) <= 3 and session.title == "新对话":
-                session.title = req.content[:30] + ("..." if len(req.content) > 30 else "")
+                    elif event["type"] == "tool_calls":
+                        # Save any text before tool calls
+                        if turn_text.strip():
+                            assistant_turn = Message(
+                                role="assistant", content=turn_text
+                            )
+                            session.messages.append(assistant_turn)
+                            current_messages.append(
+                                {"role": "assistant", "content": turn_text}
+                            )
+                            turn_text = ""
 
-            _save_session(session)
-            saved = True
+                        tool_calls_data = event["calls"]
+                        # Build assistant message with tool_calls
+                        current_messages.append(
+                            {"role": "assistant", "tool_calls": tool_calls_data}
+                        )
 
-            yield _sse_event("done", {
-                "type": "done",
-                "message_id": assistant_msg.id,
-                "session_title": session.title,
-                "meta": meta,
-            })
+                        # Execute each tool
+                        for tc in tool_calls_data:
+                            func = tc.get("function", {})
+                            name = func.get("name", "?")
+                            try:
+                                args = json.loads(func.get("arguments", "{}"))
+                            except json.JSONDecodeError:
+                                args = {}
+
+                            yield _sse_event(
+                                "tool_start",
+                                {
+                                    "type": "tool_start",
+                                    "tool": name,
+                                    "query": args.get("query", ""),
+                                },
+                            )
+
+                            result = await execute_tool(name, args)
+                            tool_content = result.get(
+                                "content", result.get("error", "")
+                            )
+
+                            yield _sse_event(
+                                "tool_result",
+                                {
+                                    "type": "tool_result",
+                                    "tool": name,
+                                    "summary": tool_content[:200] + "..."
+                                    if len(tool_content) > 200
+                                    else tool_content,
+                                },
+                            )
+
+                            # Append tool result to conversation
+                            current_messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc.get("id", ""),
+                                    "content": tool_content,
+                                }
+                            )
+
+                            # Also save to session
+                            tool_msg = Message(
+                                role="tool",
+                                content=tool_content[:500],
+                                tool_call_id=tc.get("id", ""),
+                                name=name,
+                            )
+                            session.messages.append(tool_msg)
+
+                        # Hint to wrap up after 3 rounds
+                        if iteration >= 3:
+                            current_messages.append(
+                                {
+                                    "role": "user",
+                                    "content": "你已经调用了多轮工具，请基于已有信息直接给出最终回复，不要再调用工具。",
+                                }
+                            )
+
+                        break  # exit inner loop, continue outer loop
+
+                else:
+                    # No tool_calls — this is the final text response
+                    # Save assistant message
+                    assistant_msg = Message(
+                        role="assistant", content=full_response
+                    )
+                    session.messages.append(assistant_msg)
+
+                    if (
+                        len(session.messages) <= 3
+                        and session.title == "新对话"
+                    ):
+                        session.title = req.content[:30] + (
+                            "..." if len(req.content) > 30 else ""
+                        )
+
+                    _save_session(session)
+                    saved = True
+
+                    yield _sse_event(
+                        "done",
+                        {
+                            "type": "done",
+                            "message_id": assistant_msg.id,
+                            "session_title": session.title,
+                            "meta": meta,
+                        },
+                    )
+                    return
+
+            # Max iterations reached
+            if full_response:
+                assistant_msg = Message(role="assistant", content=full_response)
+                session.messages.append(assistant_msg)
+                _save_session(session)
+                saved = True
+                yield _sse_event(
+                    "done",
+                    {
+                        "type": "done",
+                        "message_id": assistant_msg.id,
+                        "session_title": session.title,
+                        "meta": meta,
+                    },
+                )
+            else:
+                raise Exception("达到最大推理轮次，请重试")
 
         except Exception as e:
             if full_response and not saved:
-                partial_msg = Message(role="assistant", content=full_response + "\n\n⚠️ 回复中断")
+                partial_msg = Message(
+                    role="assistant",
+                    content=full_response + "\n\n⚠️ 回复中断",
+                )
                 session.messages.append(partial_msg)
                 _save_session(session)
                 saved = True
             yield _sse_event("error", {"type": "error", "message": str(e)})
 
         finally:
-            # Runs on GeneratorExit (client disconnected mid-stream) — save whatever arrived
             if full_response and not saved:
                 try:
-                    partial_msg = Message(role="assistant", content=full_response + "\n\n⚠️ 回复中断")
+                    partial_msg = Message(
+                        role="assistant",
+                        content=full_response + "\n\n⚠️ 回复中断",
+                    )
                     session.messages.append(partial_msg)
                     _save_session(session)
                 except Exception:

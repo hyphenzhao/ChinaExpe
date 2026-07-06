@@ -556,6 +556,16 @@ async function sendMessage() {
                             fullContent += data.content;
                             assistantDiv.querySelector('.message-bubble').textContent = fullContent;
                             scrollToBottom();
+                        } else if (data.type === 'tool_start') {
+                            // Show tool call indicator in the message
+                            const toolName = data.tool || '';
+                            const hint = toolName === 'search_knowledge'
+                                ? `🔍 搜索: ${data.query || ''}`
+                                : `⚙️ ${toolName}`;
+                            assistantDiv.querySelector('.message-bubble').textContent = hint + '\n\n';
+                        } else if (data.type === 'tool_result') {
+                            // Tool completed, continue streaming
+                            assistantDiv.querySelector('.message-bubble').textContent = '📖 已获取资料，正在分析...\n\n';
                         } else if (data.type === 'done') {
                             receivedDone = true;
                             assistantDiv.querySelector('.message-bubble').innerHTML = renderMarkdown(fullContent);

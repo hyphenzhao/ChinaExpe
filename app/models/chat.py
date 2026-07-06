@@ -12,11 +12,15 @@ def gen_id() -> str:
 class Message(BaseModel):
     """A single chat message."""
     id: str = Field(default_factory=gen_id)
-    role: Literal["user", "assistant", "system"]
-    content: str
+    role: Literal["user", "assistant", "system", "tool"] = "user"
+    content: str = ""
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     # Optional context from chart interaction
     context: Optional[dict] = None
+    # Tool calling support
+    tool_calls: Optional[list[dict]] = None       # assistant messages with tool calls
+    tool_call_id: Optional[str] = None            # tool result messages
+    name: Optional[str] = None                    # tool name for tool result messages
 
 
 class Session(BaseModel):
