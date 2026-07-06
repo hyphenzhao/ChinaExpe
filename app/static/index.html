@@ -72,6 +72,20 @@
                         <button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button>
                     </div>
                 </div>
+
+                <!-- Knowledge Base Index -->
+                <div class="config-card" style="margin-top:1rem;">
+                    <h3 style="margin-bottom:0.75rem;">📚 本地知识库索引</h3>
+                    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
+                        为 knowledge_base/ 中的原文建立搜索索引，提高检索精度。索引只需在内容变动后重建。
+                    </p>
+                    <div class="model-actions">
+                        <button class="btn btn-secondary" onclick="buildKnowledgeIndex()">🔧 生成索引</button>
+                        <button class="btn btn-ghost btn-sm" onclick="refreshIndexInfo()">🔄 刷新</button>
+                    </div>
+                    <div id="index-result" class="test-result hidden" style="margin-top:0.5rem;"></div>
+                    <div id="index-info" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;"></div>
+                </div>
             </div>
         </div>
 
@@ -245,12 +259,12 @@
         <div class="shishen-popup hidden" id="shishen-popup"></div>
     </div>
 
-    <script src="/js/state.js?v=37"></script>
-    <script src="/js/app.js?v=37"></script>
-    <script src="/js/config.js?v=37"></script>
-    <script src="/js/chat.js?v=37"></script>
-    <script src="/js/chart-ziwei.js?v=37"></script>
-    <script src="/js/chart-shishen.js?v=37"></script>
-    <script src="/js/people.js?v=37"></script>
+    <script src="/js/state.js?v=38"></script>
+    <script src="/js/app.js?v=38"></script>
+    <script src="/js/config.js?v=38"></script>
+    <script src="/js/chat.js?v=38"></script>
+    <script src="/js/chart-ziwei.js?v=38"></script>
+    <script src="/js/chart-shishen.js?v=38"></script>
+    <script src="/js/people.js?v=38"></script>
 </body>
 </html>

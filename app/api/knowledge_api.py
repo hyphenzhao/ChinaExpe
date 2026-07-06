@@ -1,8 +1,9 @@
-"""Knowledge API routes - RAG queries."""
+"""Knowledge API routes - RAG queries and index management."""
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..services.knowledge_service import knowledge_service
+from ..services.local_knowledge import local_knowledge
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -42,4 +43,22 @@ async def embed_text(req: EmbedRequest):
 @router.get("/status")
 async def knowledge_status():
     """Check knowledge base status."""
-    return {"available": knowledge_service.is_available()}
+    return {
+        "lancedb_available": knowledge_service.is_available(),
+        "local_available": local_knowledge.is_available(),
+        "index_exists": local_knowledge.index_exists(),
+        "index_info": local_knowledge.index_info(),
+    }
+
+
+@router.post("/build-index")
+async def build_index():
+    """Rebuild the local knowledge base search index."""
+    result = local_knowledge.build_index()
+    return result
+
+
+@router.get("/index-info")
+async def get_index_info():
+    """Get info about the current local knowledge index."""
+    return local_knowledge.index_info()

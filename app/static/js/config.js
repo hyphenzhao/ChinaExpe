@@ -36,6 +36,8 @@ async function loadConfigPage() {
 
     // Refresh models on load
     await refreshModels();
+    // Refresh index info
+    refreshIndexInfo();
 }
 
 function updateProviderUI() {
@@ -131,6 +133,44 @@ async function testConnection() {
     } catch (e) {
         resultDiv.classList.add('error');
         resultDiv.textContent = `❌ 请求失败: ${e.message}`;
+    }
+}
+
+async function buildKnowledgeIndex() {
+    const resultDiv = document.getElementById('index-result');
+    resultDiv.classList.remove('hidden', 'success', 'error');
+    resultDiv.textContent = '⏳ 正在扫描知识库文件并生成索引...';
+    resultDiv.className = 'test-result';
+
+    try {
+        const resp = await fetch('/api/knowledge/build-index', { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+            resultDiv.classList.add('success');
+            resultDiv.textContent = `✅ ${data.message}`;
+        } else {
+            resultDiv.classList.add('error');
+            resultDiv.textContent = `❌ ${data.message}`;
+        }
+    } catch (e) {
+        resultDiv.classList.add('error');
+        resultDiv.textContent = `❌ 请求失败: ${e.message}`;
+    }
+    refreshIndexInfo();
+}
+
+async function refreshIndexInfo() {
+    const infoDiv = document.getElementById('index-info');
+    try {
+        const resp = await fetch('/api/knowledge/index-info');
+        const data = await resp.json();
+        if (data.exists) {
+            infoDiv.innerHTML = `索引状态：<span style="color:var(--accent-green);">已建立</span> | ${data.file_count} 文件 | ${data.term_count} 关键词 | ${data.built_at}`;
+        } else {
+            infoDiv.innerHTML = `索引状态：<span style="color:var(--accent-red);">未建立</span> — 点击"生成索引"`;
+        }
+    } catch (e) {
+        infoDiv.textContent = '无法获取索引状态';
     }
 }
 
