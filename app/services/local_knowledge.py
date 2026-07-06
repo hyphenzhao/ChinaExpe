@@ -11,9 +11,6 @@ from typing import Optional
 # Project root relative to this file: app/services/local_knowledge.py -> ../../
 _KB_PATH = Path(__file__).resolve().parent.parent.parent / "knowledge_base"
 
-# Also check the external ziwemy mirror if available
-_EXTERNAL_PATH = Path("/Volumes/Storage/OpenClaw-Space/紫薇麦/content")
-
 
 class LocalKnowledgeService:
     """Searches local text files by keyword matching."""
@@ -30,11 +27,9 @@ class LocalKnowledgeService:
     def _scan_files(self) -> list[Path]:
         """Scan knowledge_base/ and external mirror for readable files."""
         files = []
-        for base in [_KB_PATH, _EXTERNAL_PATH]:
-            if not base.exists():
-                continue
+        if _KB_PATH.exists():
             for ext in ["*.txt", "*.md"]:
-                for f in base.rglob(ext):
+                for f in _KB_PATH.rglob(ext):
                     if f.name in ("README.md",):
                         continue
                     files.append(f)
