@@ -85,6 +85,97 @@ _DIR_CN_MAP = {
     "work-and-career": "事业 工作 职业",
 }
 
+# ── Smart keyword extraction from user questions ─────────────────
+
+# Comprehensive 紫微斗数 terminology: stars, palaces, concepts.
+# Used to extract meaningful keywords from natural-language questions.
+_ZWDS_TERMS = [
+    # 14 main stars
+    "紫微", "天机", "太阳", "武曲", "天同", "廉贞",
+    "天府", "太阴", "贪狼", "巨门", "天相", "天梁", "七杀", "破军",
+    # Compound star names
+    "紫微天府", "紫微天相", "紫微七杀", "紫微破军", "紫微贪狼",
+    "武曲天府", "武曲天相", "武曲七杀", "武曲破军", "武曲贪狼",
+    "廉贞天府", "廉贞天相", "廉贞七杀", "廉贞破军", "廉贞贪狼",
+    "天同太阴", "天同天梁", "天同巨门",
+    "太阳太阴", "太阳天梁", "太阳巨门",
+    "天机太阴", "天机天梁", "天机巨门",
+    # Auxiliary stars (吉星)
+    "文昌", "文曲", "左辅", "右弼", "天魁", "天钺", "禄存", "天马",
+    # Sha stars (煞星)
+    "擎羊", "陀罗", "火星", "铃星", "地劫", "地空",
+    # Miscellaneous stars (杂耀)
+    "天姚", "天刑", "天哭", "天虚", "红鸾", "天喜", "龙池", "凤阁",
+    "三台", "八座", "恩光", "天贵", "台辅", "封诰",
+    "天官", "天福", "孤辰", "寡宿", "蜚廉", "破碎",
+    "天巫", "阴煞", "天月", "天才", "天寿",
+    # 12 palaces
+    "命宫", "兄弟宫", "夫妻宫", "子女宫", "财帛宫", "疾厄宫",
+    "迁移宫", "交友宫", "奴仆宫", "官禄宫", "事业宫", "田宅宫",
+    "福德宫", "父母宫", "身宫",
+    # 四化
+    "化禄", "化权", "化科", "化忌",
+    # 大限流年
+    "大限", "流年", "小限", "本命", "大运",
+    # 格局 concepts
+    "三方四正", "对宫", "三合", "六合", "庙旺", "落陷", "得地",
+    "空宫", "双星", "单星", "独坐", "同度", "会照", "拱照",
+    # 十神 (bazi terms)
+    "正官", "偏官", "七杀", "正印", "偏印", "枭神",
+    "正财", "偏财", "食神", "伤官", "比肩", "劫财",
+    "日主", "用神", "忌神", "喜神", "格局", "十神",
+    # 五行
+    "金", "木", "水", "火", "土",
+    # 天干地支
+    "甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸",
+    "子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥",
+]
+
+# Sort by length descending for longest-match-first extraction
+_ZWDS_TERMS.sort(key=len, reverse=True)
+
+# Noise words to filter from keyword extraction
+_STOP_WORDS = {
+    "代表什么", "什么意思", "怎么样", "如何", "怎么", "什么", "为什么",
+    "看看", "帮我", "请问", "你好", "可以", "这个", "那个", "一下",
+    "解读", "分析", "解释", "说明", "描述", "原文", "文章", "内容",
+    "来说", "来讲", "来看", "觉得", "认为", "知道", "了解", "听说",
+    "在", "的", "了", "是", "有", "和", "与", "或", "吗", "呢", "吧", "啊",
+    "：", ":", "，", ",", "。", ".", "？", "?", "！", "!",
+}
+
+
+def extract_keywords(question: str, max_kw: int = 12) -> list[str]:
+    """Extract meaningful 紫微斗数 keywords from a natural-language question.
+
+    Uses a known terminology dictionary with longest-match-first extraction.
+    Returns keywords in order of appearance, without duplicates.
+    """
+    text = question.strip()
+    keywords = []
+    i = 0
+    while i < len(text):
+        matched = False
+        # Try longest match first
+        for term in _ZWDS_TERMS:
+            if text[i:].startswith(term):
+                keywords.append(term)
+                i += len(term)
+                matched = True
+                break
+        if not matched:
+            i += 1
+
+    # Deduplicate while preserving order
+    seen = set()
+    result = []
+    for kw in keywords:
+        if kw not in seen:
+            seen.add(kw)
+            result.append(kw)
+
+    return result[:max_kw]
+
 
 class LocalKnowledgeService:
     """Searches local text files using a precomputed inverted index."""
@@ -185,24 +276,40 @@ class LocalKnowledgeService:
             "elapsed": round(elapsed, 1),
         }
 
-    def search(self, query: str, limit: int = 5) -> list[dict]:
-        """Search using the inverted index (fast) or fallback to file scan."""
+    def search(self, query: str, limit: int = 5) -> tuple[list[dict], list[str]]:
+        """Search using the inverted index with smart keyword extraction.
+
+        Returns (results, keywords_used) so the caller can show what was searched.
+        """
+        # Extract meaningful keywords from the question
+        keywords = extract_keywords(query)
+        if not keywords:
+            # Fallback: use raw tokenization
+            keywords = list(self._tokenize(query))[:10]
+
+        # Build search query from extracted keywords
+        search_query = " ".join(keywords) if keywords else query
+
         # Try index first
         if self._load_index():
-            return self._search_index(query, limit)
-        # Fallback: build index on-the-fly and search
-        self.build_index()
-        if self._load_index():
-            return self._search_index(query, limit)
-        # Last resort: full text scan
-        return self._search_scan(query, limit)
+            results = self._search_index(search_query, limit)
+        else:
+            self.build_index()
+            if self._load_index():
+                results = self._search_index(search_query, limit)
+            else:
+                results = self._search_scan(search_query, limit)
 
-    def format_context(self, results: list[dict]) -> str:
+        return results, keywords
+
+    def format_context(self, results: list[dict], keywords: list[str] = None) -> str:
         """Format local knowledge results as system prompt context."""
         if not results:
             return ""
 
         parts = ["\n## 本地知识库原文（完整文章，优先引用）\n"]
+        if keywords:
+            parts.append(f"**搜索关键词**: {' '.join(keywords)}\n")
         parts.append(
             "以下是从本地知识库中找到的完整原文，请优先引用这些内容，再结合命盘解读。\n"
         )

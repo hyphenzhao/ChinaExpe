@@ -46,7 +46,7 @@ class AgentService:
             (messages, meta) where meta contains info about what was loaded
         """
         messages = []
-        meta = {"skills_loaded": [], "rag_results": 0, "local_results": 0, "chart_loaded": False}
+        meta = {"skills_loaded": [], "rag_results": 0, "local_results": 0, "local_keywords": [], "chart_loaded": False}
 
         # 1. Build system prompt (pass user_message for RAG query)
         system_content = await self._build_system_prompt(mode, person, user_message, meta)
@@ -79,10 +79,11 @@ class AgentService:
             meta["skills_loaded"] = ["通用玄学"]
             # Local knowledge base (priority — complete articles)
             if local_knowledge.is_available():
-                local_results = local_knowledge.search(user_message, limit=5)
+                local_results, keywords = local_knowledge.search(user_message, limit=5)
                 if local_results:
-                    local_ctx = local_knowledge.format_context(local_results)
+                    local_ctx = local_knowledge.format_context(local_results, keywords)
                     meta["local_results"] = len(local_results)
+                    meta["local_keywords"] = keywords
                     system += "\n" + local_ctx
             # LanceDB RAG (supplementary)
             if knowledge_service.is_available():
@@ -112,10 +113,11 @@ class AgentService:
         # Build local knowledge context (priority — complete articles)
         local_context = ""
         if local_knowledge.is_available():
-            local_results = local_knowledge.search(user_message, limit=5)
+            local_results, keywords = local_knowledge.search(user_message, limit=5)
             if local_results:
-                local_context = local_knowledge.format_context(local_results)
+                local_context = local_knowledge.format_context(local_results, keywords)
                 meta["local_results"] = len(local_results)
+                meta["local_keywords"] = keywords
 
         # Build LanceDB RAG context (supplementary)
         rag_context = ""
