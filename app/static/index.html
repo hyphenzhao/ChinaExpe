@@ -2,269 +2,232 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>玄学助手 — 紫微斗数 & 十神·子平命理</title>
-    <link rel="stylesheet" href="/css/main.css">
-    <link rel="stylesheet" href="/css/starfield.css">
-    <link rel="stylesheet" href="/css/chat.css">
-    <link rel="stylesheet" href="/css/chart-ziwei.css">
-    <link rel="stylesheet" href="/css/chart-shishen.css">
-    <link rel="stylesheet" href="/css/people.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="玄学助手">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/img/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/img/icon.svg">
+    <title>玄学助手 — 紫微斗数 · 子平八字</title>
+    <link rel="stylesheet" href="/css/main.css?v=__V__">
+    <link rel="stylesheet" href="/css/v2/chat.css?v=__V__">
+    <link rel="stylesheet" href="/css/v2/layout.css?v=__V__">
+    <link rel="stylesheet" href="/css/v2/ziwei.css?v=__V__">
+    <link rel="stylesheet" href="/css/v2/bazi.css?v=__V__">
 </head>
 <body>
-    <!-- Starfield background -->
-    <div class="starfield" id="starfield"></div>
-    <div class="starfield-overlay"></div>
 
-    <!-- App shell -->
-    <div id="app">
-        <!-- Page: Config -->
-        <div class="page hidden" id="page-config">
-            <div class="config-container">
-                <header class="page-header">
-                    <h1>⚙️ 配置</h1>
-                    <button class="btn btn-ghost" onclick="navigate('chat')">← 返回聊天</button>
-                </header>
-                <div class="config-card">
-                    <div class="form-group">
-                        <label>AI 提供商</label>
-                        <div class="toggle-group">
-                            <button class="toggle-btn active" data-provider="ollama" id="btn-ollama">Ollama</button>
-                            <button class="toggle-btn" data-provider="deepseek" id="btn-deepseek">DeepSeek</button>
-                        </div>
-                    </div>
-
-                    <div id="ollama-settings">
-                        <div class="form-group">
-                            <label>主机地址</label>
-                            <input type="text" id="ollama-host" value="http://127.0.0.1" class="input">
-                        </div>
-                        <div class="form-group">
-                            <label>端口</label>
-                            <input type="number" id="ollama-port" value="11434" class="input">
-                        </div>
-                    </div>
-
-                    <div id="deepseek-settings" class="hidden">
-                        <div class="form-group">
-                            <label>API 密钥</label>
-                            <input type="password" id="deepseek-key" placeholder="sk-..." class="input">
-                        </div>
-                        <div class="form-group">
-                            <label>API 地址</label>
-                            <input type="text" id="deepseek-url" value="https://api.deepseek.com" class="input">
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>模型列表</label>
-                        <div class="model-actions">
-                            <button class="btn btn-secondary" onclick="refreshModels()">🔄 刷新模型</button>
-                            <button class="btn btn-secondary" onclick="testConnection()">🔍 测试连接</button>
-                        </div>
-                        <select id="model-select" class="input">
-                            <option value="">请先刷新模型列表</option>
-                        </select>
-                        <div id="test-result" class="test-result hidden"></div>
-                    </div>
-
-                    <div class="form-actions">
-                        <button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button>
-                    </div>
-                </div>
-
-                <!-- Knowledge Base Index -->
-                <div class="config-card" style="margin-top:1rem;">
-                    <h3 style="margin-bottom:0.75rem;">📚 本地知识库索引</h3>
-                    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
-                        为 knowledge_base/ 中的原文建立搜索索引，提高检索精度。索引只需在内容变动后重建。
-                    </p>
-                    <div class="model-actions">
-                        <button class="btn btn-secondary" onclick="buildKnowledgeIndex()">🔧 生成索引</button>
-                        <button class="btn btn-ghost btn-sm" onclick="refreshIndexInfo()">🔄 刷新</button>
-                    </div>
-                    <div id="index-result" class="test-result hidden" style="margin-top:0.5rem;"></div>
-                    <div id="index-info" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.5rem;"></div>
+    <div id="app" class="shell">
+        <div class="backdrop" id="backdrop" onclick="closeDrawers()"></div>
+        <!-- ================= LEFT: people + sessions ================= -->
+        <aside class="pane pane-left" id="pane-left">
+            <div class="pane-header">
+                <h2>🌙 玄学助手</h2>
+                <div class="pane-header-actions">
+                    <button class="btn btn-ghost btn-icon" onclick="openConfig()" title="设置">⚙️</button>
+                    <button class="btn btn-ghost btn-icon" onclick="togglePane('left')" title="收起">◀</button>
                 </div>
             </div>
-        </div>
-
-        <!-- Page: Chat -->
-        <div class="page" id="page-chat">
-            <div class="chat-layout">
-                <!-- Sidebar -->
-                <aside class="sidebar" id="sidebar">
-                    <div class="sidebar-header">
-                        <h2>🌙 玄学助手</h2>
-                        <button class="btn btn-ghost btn-icon" onclick="toggleSidebar()" title="折叠侧栏"><span id="sidebar-toggle-icon">☰</span></button>
-                    </div>
-                    <button class="btn btn-primary btn-full" onclick="newChat()">＋ 新对话</button>
-
-                    <div class="sidebar-section" id="sidebar-model-info" style="font-size:0.7rem;color:var(--text-muted);padding:0.25rem 0;">
-                    </div>
-
-                    <div class="sidebar-section">
-                        <label class="sidebar-label">对话历史</label>
-                        <div class="chat-list" id="chat-list">
-                            <div class="chat-list-empty">暂无对话</div>
-                        </div>
-                    </div>
-
-                    <div class="sidebar-footer">
-                        <a href="javascript:void(0)" onclick="navigate('people')" class="sidebar-link">👥 人物</a>
-                        <a href="javascript:void(0)" onclick="navigate('config')" class="sidebar-link">⚙️ 设置</a>
-                    </div>
-                </aside>
-
-                <!-- Main chat area -->
-                <main class="chat-main">
-                    <!-- Top bar -->
-                    <div class="chat-topbar">
-                        <button class="btn btn-ghost btn-icon" id="btn-toggle-sidebar" onclick="toggleSidebar()">☰</button>
-
-                        <div class="mode-selector">
-                            <button class="mode-btn active" data-mode="theory" onclick="setMode('theory')">📚 理论模式</button>
-                            <button class="mode-btn" data-mode="chart" onclick="setMode('chart')">🔮 看盘模式</button>
-                        </div>
-
-                        <div id="chart-mode-options" class="chart-mode-options hidden">
-                            <select id="chart-type-select" class="input input-sm" onchange="onChartTypeChange()">
-                                <option value="ziwei">紫微斗数</option>
-                                <option value="shishen">十神·子平命理</option>
-                            </select>
-                            <select id="person-select" class="input input-sm" onchange="onPersonChange()">
-                                <option value="">选择人物...</option>
-                            </select>
-                            <button class="btn btn-ghost btn-sm" onclick="showNewPersonModal()" title="添加新人物">＋</button>
-                            <button class="btn btn-ghost btn-sm" onclick="showImportModal()" title="AI导入命盘">🤖</button>
-                        </div>
-                    </div>
-
-                    <!-- Messages -->
-                    <div class="messages-container" id="messages-container">
-                        <div class="welcome-message" id="welcome-message">
-                            <div class="welcome-icon">🌙</div>
-                            <h2>欢迎使用玄学助手</h2>
-                            <p>选择模式开始对话：</p>
-                            <div class="welcome-actions">
-                                <button class="btn btn-secondary" onclick="setMode('theory')">📚 理论探讨</button>
-                                <button class="btn btn-accent" onclick="setMode('chart')">🔮 命盘解析</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Input area -->
-                    <div class="input-area">
-                        <div id="meta-indicator" class="meta-indicator hidden"></div>
-                        <div class="context-tags" id="context-tags"></div>
-                        <div class="input-row">
-                            <textarea id="message-input" class="input" placeholder="输入消息... (Shift+Enter 换行)" rows="1" onkeydown="onInputKeydown(event)"></textarea>
-                            <button class="btn btn-accent btn-send" onclick="sendMessage()" id="btn-send">发送</button>
-                        </div>
-                    </div>
-                </main>
-
-                <!-- Chart panel tab — always visible toggle -->
-                <div class="chart-panel-tab" id="chart-panel-tab" onclick="toggleChartPanel()" title="展开/收起命盘">
-                    <span id="chart-panel-toggle-icon">◀</span>
+            <div class="pane-scroll">
+                <div class="section-title">
+                    <span>人物</span>
+                    <button class="btn btn-ghost btn-sm" onclick="openPersonForm()">＋ 新建</button>
                 </div>
-                <!-- Chart panel (right side, hidden on portrait) -->
-                <aside id="chart-panel-right" class="chart-panel-right hidden">
-                    <div id="chart-display-wrapper-panel">
-                        <div id="chart-display" class="chart-display"></div>
-                    </div>
-                </aside>
+                <div id="people-list" class="people-list"></div>
+                <div class="section-title" style="margin-top:.75rem;">
+                    <span>对话</span>
+                    <button class="btn btn-ghost btn-sm" onclick="newSession()">＋ 新对话</button>
+                </div>
+                <div id="session-list" class="session-list"></div>
             </div>
-        </div>
-    <!-- Page: People Management -->
-    <div class="page hidden" id="page-people">
-            <div class="people-container">
-                <div class="people-header">
-                    <h1>👥 人物管理</h1>
-                    <div style="display:flex;gap:0.5rem;">
-                        <button class="btn btn-primary" onclick="showImportModalFromPeople()">🤖 AI 导入命盘</button>
-                        <button class="btn btn-ghost" onclick="navigate('chat')">← 返回聊天</button>
+            <div class="pane-footer" id="model-info"></div>
+        </aside>
+
+        <!-- ================= CENTER: chart ================= -->
+        <main class="pane pane-center" id="pane-center">
+            <div class="center-topbar">
+                <div class="topbar-row1">
+                    <button class="btn btn-ghost btn-icon only-collapsed" id="btn-open-left" onclick="togglePane('left')" title="人物/对话">☰</button>
+                    <div class="person-title" id="person-title">未选择人物</div>
+                    <div class="topbar-right">
+                        <button class="btn btn-ghost btn-sm only-mobile" id="btn-zoom" onclick="toggleZoom()" title="紧凑盘 / 完整盘">🔍 放大</button>
+                        <button class="btn btn-ghost btn-sm" onclick="openPersonForm(AppState.personId)" id="btn-edit-person" title="编辑出生信息/设置">✎</button>
+                        <button class="btn btn-ghost btn-icon only-collapsed" id="btn-open-right" onclick="togglePane('right')" title="AI 对话">💬<span class="ctx-badge hidden" id="ctx-badge"></span></button>
                     </div>
                 </div>
-                <div class="people-grid" id="people-grid">
-                    <div class="people-empty"><div class="people-empty-icon">⏳</div><p>加载中...</p></div>
+                <div class="topbar-row2">
+                    <div class="chart-tabs">
+                        <button class="tab-btn active" data-chart="ziwei" onclick="switchChart('ziwei')">紫微斗数</button>
+                        <button class="tab-btn" data-chart="bazi" onclick="switchChart('bazi')">子平八字</button>
+                    </div>
+                    <div class="layer-toggles" id="layer-toggles">
+                        <button class="layer-btn active" data-layer="sihua" onclick="toggleLayer('sihua')" title="生年四化 + 自化">四化</button>
+                        <button class="layer-btn" data-layer="sanhe" onclick="toggleLayer('sanhe')" title="三方四正">三合</button>
+                        <button class="layer-btn" data-layer="feixing" onclick="toggleLayer('feixing')" title="宫干飞化">飞星</button>
+                        <button class="layer-btn active" data-layer="minor" onclick="toggleLayer('minor')" title="显示小星">小星</button>
+                        <button class="layer-btn" data-layer="links" onclick="toggleLayer('links')" title="用灰色虚线连接所选宫位的三方四正">虚线</button>
+                    </div>
                 </div>
             </div>
-        </div>
+            <div class="center-body" id="center-body">
+                <div class="chart-area" id="chart-area">
+                    <div class="chart-empty" id="chart-empty">
+                        <div class="welcome-icon">🌙</div>
+                        <h2>选择或新建一个人物</h2>
+                        <p>输入出生信息后自动排盘（文墨天机口径）。左侧可折叠人物与对话，右侧为 AI 解盘助手。</p>
+                    </div>
+                    <div id="ziwei-root" class="hidden"></div>
+                    <div id="bazi-root" class="hidden"></div>
+                </div>
+                <div class="strip-area" id="strip-area"></div>
+            </div>
+        </main>
 
-    <!-- Modals -->
-    <div class="modal-overlay hidden" id="modal-overlay">
-        <!-- Ziwei Palace Detail -->
-        <div class="modal hidden" id="modal-palace">
-            <div class="modal-header">
-                <h3 id="modal-palace-title"></h3>
-                <button class="btn btn-ghost" onclick="closeModal('modal-palace')">✕</button>
-            </div>
-            <div class="modal-body" id="modal-palace-body"></div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-palace')">← 返回12宫</button>
-            </div>
-        </div>
-
-        <!-- New Person -->
-        <div class="modal hidden" id="modal-new-person">
-            <div class="modal-header">
-                <h3>添加新人物</h3>
-                <button class="btn btn-ghost" onclick="closeModal('modal-new-person')">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>显示名称</label>
-                    <input type="text" id="new-person-display-name" class="input" placeholder="例如: 宋佳纯">
-                </div>
-                <div class="form-group">
-                    <label>缩写标识（英文，如 sjc）</label>
-                    <input type="text" id="new-person-id" class="input" placeholder="例如: sjc">
+        <!-- ================= RIGHT: chat ================= -->
+        <aside class="pane pane-right" id="pane-right">
+            <div class="pane-resizer hide-mobile" id="pane-resizer" title="拖动调整宽度"></div>
+            <div class="pane-header" id="chat-header">
+                <button class="btn btn-ghost btn-sm only-mobile" onclick="togglePane('right', true)" title="返回命盘">← 命盘</button>
+                <div class="session-title" id="session-title">AI 解盘</div>
+                <div class="pane-header-actions">
+                    <button class="btn btn-ghost btn-sm" onclick="newSession()" title="新对话">＋</button>
+                    <button class="btn btn-ghost btn-sm hide-mobile" id="btn-float" onclick="toggleChatFloat()" title="弹出为独立窗口 / 停靠回右栏">⧉ 弹出</button>
+                    <button class="btn btn-ghost btn-icon hide-mobile" onclick="togglePane('right')" title="收起">▶</button>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-new-person')">取消</button>
-                <button class="btn btn-primary" onclick="createNewPerson()">创建</button>
-            </div>
-        </div>
-
-        <!-- Import Chart (AI-powered) -->
-        <div class="modal hidden" id="modal-import-chart">
-            <div class="modal-header">
-                <h3>＋ 添加命盘</h3>
-                <button class="btn btn-ghost" onclick="closeModal('modal-import-chart')">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>名字</label>
-                    <input type="text" id="import-display-name" class="input" placeholder="例如: 宋佳纯">
+            <div class="messages-container" id="messages-container">
+                <div class="welcome-message" id="welcome-message">
+                    <div class="welcome-icon">🔮</div>
+                    <p>选中宫位/星曜/柱后提问，AI 会自动读取命盘与运限，并检索典籍。</p>
                 </div>
-                <div class="form-group">
-                    <label>缩写 <span style="color:var(--text-muted);font-weight:400;">（可选，留空则自动生成）</span></label>
-                    <input type="text" id="import-person-id" class="input" placeholder="例如: sjc">
-                </div>
-                <div class="form-group">
-                    <label>命盘</label>
-                    <textarea id="import-raw-text" class="input" rows="12" placeholder="粘贴排盘软件的导出内容，任意格式均可，AI 会自动识别类型并提取..."></textarea>
-                </div>
-                <div id="import-result" class="test-result hidden"></div>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeModal('modal-import-chart')">取消</button>
-                <button class="btn btn-accent" onclick="importChartAI()" id="btn-import">🤖 AI 识别导入</button>
+            <div class="input-area">
+                <div id="meta-indicator" class="meta-indicator hidden"></div>
+                <div class="context-tags" id="context-tags"></div>
+                <div class="input-row">
+                    <textarea id="message-input" class="input" placeholder="输入问题… (Enter 发送, Shift+Enter 换行)" rows="1" onkeydown="onInputKeydown(event)" oninput="autoGrow(this)"></textarea>
+                    <button class="btn btn-accent btn-send" onclick="sendMessage()" id="btn-send">发送</button>
+                </div>
             </div>
-        </div>
-
-        <!-- ShiShen popup -->
-        <div class="shishen-popup hidden" id="shishen-popup"></div>
+        </aside>
     </div>
 
-    <script src="/js/state.js?v=41"></script>
-    <script src="/js/app.js?v=41"></script>
-    <script src="/js/config.js?v=41"></script>
-    <script src="/js/chat.js?v=41"></script>
-    <script src="/js/chart-ziwei.js?v=41"></script>
-    <script src="/js/chart-shishen.js?v=41"></script>
-    <script src="/js/people.js?v=41"></script>
+    <!-- ================= Modals ================= -->
+    <div class="modal-overlay hidden" id="modal-overlay" onclick="if(event.target===this) closeAllModals()">
+        <!-- Person form -->
+        <div class="modal hidden" id="modal-person">
+            <div class="modal-header">
+                <h3 id="person-form-title">新建人物</h3>
+                <button class="btn btn-ghost" onclick="closeModal('modal-person')">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group"><label>姓名</label><input id="pf-name" class="input" placeholder="例如：张三"></div>
+                    <div class="form-group"><label>标识（英文，可留空自动生成）</label><input id="pf-id" class="input" placeholder="zhangsan"></div>
+                    <div class="form-group"><label>性别</label>
+                        <select id="pf-gender" class="input"><option value="男">男</option><option value="女">女</option></select></div>
+                    <div class="form-group"><label>出生日期（公历）</label><input id="pf-date" type="date" class="input"></div>
+                    <div class="form-group"><label>出生时间（钟表时间）</label><input id="pf-time" type="time" class="input"></div>
+                    <div class="form-group"><label>出生地经度（°E）</label>
+                        <div class="row-inline"><input id="pf-lon" type="number" step="0.001" class="input" value="120"><select id="pf-city" class="input" onchange="pickCity()"><option value="">常用城市…</option></select></div></div>
+                    <div class="form-group"><label>真太阳时</label>
+                        <select id="pf-tst" class="input"><option value="1">按经度修正（文墨天机默认）</option><option value="0">不修正，直接用钟表时间</option></select></div>
+                    <div class="form-group"><label>手动指定时辰（可选）</label>
+                        <select id="pf-hour" class="input"><option value="">自动</option></select></div>
+                </div>
+                <details class="settings-details"><summary>流派设置（默认 = 文墨天机）</summary>
+                    <div class="form-grid" id="pf-settings"></div>
+                </details>
+                <div class="form-group"><label>出生地（备注）</label><input id="pf-place" class="input" placeholder="城市/医院（可选）"></div>
+                <div id="pf-result" class="test-result hidden"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost text-red" id="pf-delete" onclick="deletePersonConfirm()" style="margin-right:auto;">删除人物</button>
+                <button class="btn btn-secondary" onclick="closeModal('modal-person')">取消</button>
+                <button class="btn btn-primary" onclick="savePersonForm()">保存并排盘</button>
+            </div>
+        </div>
+
+        <!-- Palace detail (bottom sheet on mobile) -->
+        <div class="modal hidden sheet" id="modal-palace">
+            <div class="sheet-handle"></div>
+            <div class="modal-header"><h3 id="modal-palace-title"></h3><button class="btn btn-ghost" onclick="closeModal('modal-palace')">✕</button></div>
+            <div class="modal-body" id="modal-palace-body"></div>
+        </div>
+
+        <!-- Generic info sheet (e.g. 神煞 list) -->
+        <div class="modal hidden sheet" id="modal-info">
+            <div class="sheet-handle"></div>
+            <div class="modal-header"><h3 id="modal-info-title"></h3><button class="btn btn-ghost" onclick="closeModal('modal-info')">✕</button></div>
+            <div class="modal-body" id="modal-info-body"></div>
+        </div>
+
+        <!-- Wenmo compare -->
+        <div class="modal hidden" id="modal-compare">
+            <div class="modal-header"><h3>与文墨天机导出比对</h3><button class="btn btn-ghost" onclick="closeModal('modal-compare')">✕</button></div>
+            <div class="modal-body">
+                <p class="text-muted" style="font-size:.8rem;margin-bottom:.5rem;">把文墨天机「导出命盘文本」粘贴进来，逐宫逐星比对引擎结果。</p>
+                <textarea id="compare-text" class="input" rows="10"></textarea>
+                <div id="compare-result" class="compare-result"></div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-primary" onclick="runCompare()">比对</button></div>
+        </div>
+
+        <!-- Config -->
+        <div class="modal hidden" id="modal-config">
+            <div class="modal-header"><h3>⚙️ 设置</h3><button class="btn btn-ghost" onclick="closeModal('modal-config')">✕</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>AI 提供商</label>
+                    <div class="toggle-group">
+                        <button class="toggle-btn active" data-provider="ollama" id="btn-ollama">Ollama</button>
+                        <button class="toggle-btn" data-provider="deepseek" id="btn-deepseek">DeepSeek</button>
+                    </div></div>
+                <div id="ollama-settings">
+                    <div class="form-group"><label>主机地址</label><input type="text" id="ollama-host" class="input"></div>
+                    <div class="form-group"><label>端口</label><input type="number" id="ollama-port" class="input"></div>
+                </div>
+                <div id="deepseek-settings" class="hidden">
+                    <div class="form-group"><label>API 密钥</label><input type="password" id="deepseek-key" class="input"></div>
+                    <div class="form-group"><label>API 地址</label><input type="text" id="deepseek-url" class="input"></div>
+                </div>
+                <div class="form-group"><label>模型</label>
+                    <div class="model-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="refreshModels()">🔄 刷新模型</button>
+                        <button class="btn btn-secondary btn-sm" onclick="testConnection()">🔍 测试连接</button>
+                    </div>
+                    <select id="model-select" class="input"></select>
+                    <div id="test-result" class="test-result hidden"></div>
+                </div>
+                <div class="form-actions"><button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button></div>
+                <hr class="sep">
+                <h3 style="margin-bottom:.5rem;">📚 知识库</h3>
+                <div class="model-actions" style="flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="importLiterature()">📥 导入典籍/技能</button>
+                    <button class="btn btn-secondary btn-sm" onclick="buildKnowledgeIndex()">🔧 重建本地索引</button>
+                    <button class="btn btn-secondary btn-sm" onclick="buildVectors()">🧠 向量化（bge-m3）</button>
+                    <button class="btn btn-ghost btn-sm" onclick="refreshIndexInfo()">🔄 状态</button>
+                </div>
+                <div id="index-result" class="test-result hidden" style="margin-top:.5rem;"></div>
+                <div id="index-info" class="text-muted" style="font-size:.75rem;margin-top:.5rem;"></div>
+                <hr class="sep">
+                <div class="model-actions"><button class="btn btn-ghost btn-sm" onclick="openCompare()">🧪 与文墨天机导出比对</button></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/v2/api.js?v=__V__"></script>
+    <script src="/js/v2/state.js?v=__V__"></script>
+    <script src="/js/v2/layout.js?v=__V__"></script>
+    <script src="/js/v2/config.js?v=__V__"></script>
+    <script src="/js/v2/people.js?v=__V__"></script>
+    <script src="/js/v2/sessions.js?v=__V__"></script>
+    <script src="/js/v2/chat.js?v=__V__"></script>
+    <script src="/js/v2/ziwei.js?v=__V__"></script>
+    <script src="/js/v2/ziwei-layers.js?v=__V__"></script>
+    <script src="/js/v2/bazi.js?v=__V__"></script>
+    <script src="/js/v2/app.js?v=__V__"></script>
 </body>
 </html>

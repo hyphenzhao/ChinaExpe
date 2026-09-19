@@ -159,6 +159,9 @@ class LLMService:
 
                     # Accumulate tool call deltas by index
                     tool_call_buf: dict[int, dict] = {}
+                    # Thinking mode: the reasoning must be passed back to the API
+                    # together with the tool calls in the follow-up request.
+                    reasoning = ""
 
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):
@@ -171,7 +174,8 @@ class LLMService:
                                     tool_call_buf[i]
                                     for i in sorted(tool_call_buf.keys())
                                 ]
-                                yield {"type": "tool_calls", "calls": calls}
+                                yield {"type": "tool_calls", "calls": calls,
+                                       "reasoning_content": reasoning}
                             return
 
                         try:
@@ -184,6 +188,10 @@ class LLMService:
                             continue
 
                         delta = choices[0].get("delta", {})
+
+                        rc = delta.get("reasoning_content")
+                        if rc:
+                            reasoning += rc
 
                         # Text content
                         content = delta.get("content", "")

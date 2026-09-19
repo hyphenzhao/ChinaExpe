@@ -1,9 +1,11 @@
-"""Knowledge API routes - RAG queries and index management."""
+"""Knowledge API - hybrid search, literature import, index/vector builds."""
 from fastapi import APIRouter
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ..services.knowledge_service import knowledge_service
 from ..services.local_knowledge import local_knowledge
+from ..services.literature_importer import import_literature, literature_stats
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -11,54 +13,49 @@ router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 class KnowledgeQuery(BaseModel):
     query: str
     limit: int = 5
-    chart_context: str = ""
-
-
-class EmbedRequest(BaseModel):
-    text: str
+    scope: str = "all"
 
 
 @router.post("/query")
 async def query_knowledge(req: KnowledgeQuery):
-    """Query the LanceDB knowledge base."""
-    if not knowledge_service.is_available():
-        return {"results": [], "available": False, "message": "知识库不可用"}
-    results = await knowledge_service.query(
-        req.query,
-        limit=req.limit,
-        chart_context=req.chart_context,
-    )
-    return {"results": results, "available": True}
-
-
-@router.post("/embed")
-async def embed_text(req: EmbedRequest):
-    """Embed text using Ollama bge-m3."""
-    vec = await knowledge_service.embed(req.text)
-    if vec is None:
-        return {"success": False, "message": "嵌入失败，请确认 Ollama 和 bge-m3 模型可用"}
-    return {"success": True, "embedding_dim": len(vec)}
+    local, keywords = ([], [])
+    if local_knowledge.is_available():
+        local, keywords = local_knowledge.search(req.query, limit=req.limit, scope=req.scope)
+    vector = await knowledge_service.query(req.query, limit=req.limit, scope=req.scope) if knowledge_service.is_available() else []
+    return {"keywords": keywords, "local": local, "vector": vector}
 
 
 @router.get("/status")
 async def knowledge_status():
-    """Check knowledge base status."""
     return {
         "lancedb_available": knowledge_service.is_available(),
+        "lancedb": knowledge_service.status(),
         "local_available": local_knowledge.is_available(),
         "index_exists": local_knowledge.index_exists(),
         "index_info": local_knowledge.index_info(),
+        "literature": literature_stats(),
     }
 
 
 @router.post("/build-index")
 async def build_index():
-    """Rebuild the local knowledge base search index."""
-    result = local_knowledge.build_index()
+    return await run_in_threadpool(local_knowledge.build_index)
+
+
+@router.post("/import-literature")
+async def import_lit():
+    result = await run_in_threadpool(import_literature)
+    if result.get("success"):
+        idx = await run_in_threadpool(local_knowledge.build_index)
+        result["message"] += "；" + idx.get("message", "")
     return result
+
+
+@router.post("/build-vectors")
+async def build_vectors():
+    return await knowledge_service.build_literature_vectors()
 
 
 @router.get("/index-info")
 async def get_index_info():
-    """Get info about the current local knowledge index."""
     return local_knowledge.index_info()

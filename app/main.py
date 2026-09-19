@@ -6,10 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from .version import VERSION
 
 from .api.config_api import router as config_router
 from .api.chat_api import router as chat_router
-from .api.charts_api import router as charts_router
+from .api.people_api import router as people_router
 from .api.knowledge_api import router as knowledge_router
 
 
@@ -18,17 +19,17 @@ async def lifespan(app: FastAPI):
     """Application lifespan - ensure data directories exist."""
     data_dir = Path(__file__).resolve().parent.parent / "data"
     sessions_dir = data_dir / "sessions"
-    charts_dir = data_dir / "charts"
+    people_dir = data_dir / "people"
     data_dir.mkdir(parents=True, exist_ok=True)
     sessions_dir.mkdir(parents=True, exist_ok=True)
-    charts_dir.mkdir(parents=True, exist_ok=True)
+    people_dir.mkdir(parents=True, exist_ok=True)
     yield
 
 
 app = FastAPI(
     title="玄学助手",
     description="互动式玄学助手 — 紫微斗数 & 十神·子平命理解盘",
-    version="1.0.0",
+    version=VERSION,
     lifespan=lifespan,
 )
 
@@ -54,27 +55,43 @@ for sub in ["css", "js", "img"]:
 @app.get("/api/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": VERSION}
 
 
 # API routes
 app.include_router(config_router)
 app.include_router(chat_router)
-app.include_router(charts_router)
+app.include_router(people_router)
 app.include_router(knowledge_router)
+
+
+def _index_page():
+    """index.html with the version stamp injected (cache busting for js/css)."""
+    from fastapi.responses import HTMLResponse
+    page = (static_dir / "index.html").read_text(encoding="utf-8").replace("__V__", VERSION)
+    return HTMLResponse(page, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/v2")
+async def serve_v2():
+    return _index_page()
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse(str(static_dir / "manifest.webmanifest"), media_type="application/manifest+json")
 
 
 # SPA catch-all: serve index.html for all non-API, non-static routes
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve the SPA entry point for all frontend routes."""
-    index_path = static_dir / "index.html"
     if full_path.startswith("api/"):
-        return {"detail": "Not Found"}, 404
-    return FileResponse(str(index_path))
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return _index_page()
 
 
 @app.get("/")
 async def root():
-    """Serve the main page."""
-    return FileResponse(str(static_dir / "index.html"))
+    return _index_page()

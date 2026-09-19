@@ -1,0 +1,58 @@
+/* ===== 子平八字 (测测 layout) ===== */
+.bz-wrap { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: .6rem; }
+.bz-head { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .8rem; color: var(--text-secondary); }
+.bz-head b { color: var(--text-primary); }
+.bz-table { width: 100%; border-collapse: separate; border-spacing: 4px; table-layout: fixed; }
+.bz-table th { font-size: .7rem; color: var(--text-muted); font-weight: 500; text-align: left; width: 3.2em; }
+.bz-table td { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; text-align: center; padding: .3rem .25rem; vertical-align: middle; font-size: .8rem; }
+.bz-table thead td { font-weight: 700; color: var(--accent-gold); background: rgba(180,83,9,.06); }
+.bz-table td.gan, .bz-table td.zhi { font-size: 1.5rem; font-weight: 700; cursor: pointer; }
+.bz-table td.gan:hover, .bz-table td.zhi:hover { border-color: var(--accent-gold); }
+.wx-木 { color: #15803d; } .wx-火 { color: #dc2626; } .wx-土 { color: #b45309; } .wx-金 { color: #4b5563; } .wx-水 { color: #1d4ed8; }
+.bz-hidden { display: flex; flex-direction: column; gap: .1rem; font-size: .75rem; }
+.bz-hidden span small { color: var(--text-muted); margin-left: .2rem; }
+.bz-ss { display: flex; flex-wrap: wrap; gap: .2rem; justify-content: center; }
+.bz-ss span { font-size: .62rem; padding: 0 .3rem; border-radius: 999px; background: #e5e7eb; color: #374151; }
+.bz-ss span.ji { background: #fee2e2; color: #b91c1c; }
+.bz-ss span.more { background: transparent; border: 1px dashed var(--border-color); color: var(--text-muted); cursor: pointer; }
+.bz-rel { display: flex; flex-wrap: wrap; gap: .3rem; font-size: .74rem; }
+.bz-rel span { padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-secondary); }
+.bz-rel span.he { border-color: rgba(4,120,87,.5); color: #047857; } .bz-rel span.chong, .bz-rel span.xing, .bz-rel span.hai, .bz-rel span.po { border-color: rgba(185,28,28,.5); color: #b91c1c; }
+.bz-wx { display: flex; gap: .5rem; font-size: .78rem; flex-wrap: wrap; }
+.bz-wx span { padding: .1rem .5rem; border-radius: 6px; background: var(--bg-card); border: 1px solid var(--border-color); }
+
+.bz-chain { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; }
+.bz-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: .45rem .55rem; font-size: .74rem; display: flex; flex-direction: column; gap: .2rem; }
+.bz-card .lv { font-size: .68rem; color: var(--text-muted); display: flex; justify-content: space-between; }
+.bz-card .gz { font-size: 1.35rem; font-weight: 700; letter-spacing: .1em; }
+.bz-card .ss { color: var(--text-secondary); }
+.bz-card .btn { align-self: flex-end; margin-top: .2rem; }
+.bz-card.cur { border-color: var(--accent-gold); }
+
+.bz-day { display: flex; align-items: center; gap: .35rem; }
+.bz-day input { width: 9.5em; padding: .2rem .4rem; }
+
+@media (max-width: 960px) {
+    .bz-table td.gan, .bz-table td.zhi { font-size: 1.15rem; }
+    .bz-table td { font-size: .68rem; padding: .2rem .15rem; }
+    .bz-table th { width: 2.6em; font-size: .62rem; }
+}
+
+@media (max-width: 700px) {
+    .bz-wrap { gap: .4rem; }
+    .bz-head { font-size: .7rem; gap: .2rem .6rem; }
+    .bz-table { border-spacing: 2px; }
+    .bz-table th { width: 2.2em; font-size: .6rem; }
+    .bz-table td { font-size: .64rem; padding: .18rem .1rem; border-radius: 4px; }
+    .bz-table thead td { font-size: .7rem; }
+    .bz-table td.gan, .bz-table td.zhi { font-size: 1.1rem; min-height: 36px; }
+    .bz-hidden { font-size: .62rem; }
+    .bz-ss span { font-size: .56rem; }
+    .bz-rel { font-size: .66rem; }
+    .bz-wx { font-size: .68rem; gap: .3rem; }
+    .bz-chain { display: flex; overflow-x: auto; gap: .4rem; scroll-snap-type: x mandatory; padding-bottom: .2rem; scrollbar-width: none; }
+    .bz-chain::-webkit-scrollbar { display: none; }
+    .bz-card { min-width: 72vw; scroll-snap-align: center; flex-shrink: 0; }
+    .bz-card .gz { font-size: 1.2rem; }
+    .bz-day input { width: 8.5em; font-size: 16px; }
+}

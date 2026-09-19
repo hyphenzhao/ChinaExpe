@@ -160,6 +160,7 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
         person=req.person or session.person,
         selected_context=req.selected_context,
         history=history,
+        view_context=req.view_context,
     )
 
     def _sse_event(event: str, data: dict) -> str:
@@ -214,16 +215,18 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                                 role="assistant", content=turn_text
                             )
                             session.messages.append(assistant_turn)
-                            current_messages.append(
-                                {"role": "assistant", "content": turn_text}
-                            )
-                            turn_text = ""
 
                         tool_calls_data = event["calls"]
-                        # Build assistant message with tool_calls
-                        current_messages.append(
-                            {"role": "assistant", "tool_calls": tool_calls_data}
-                        )
+                        # One assistant message carrying the text, the tool calls and
+                        # (DeepSeek thinking mode) the reasoning, which the API
+                        # requires to be passed back within the same turn.
+                        call_msg = {"role": "assistant", "tool_calls": tool_calls_data}
+                        if turn_text:
+                            call_msg["content"] = turn_text
+                        if event.get("reasoning_content"):
+                            call_msg["reasoning_content"] = event["reasoning_content"]
+                        current_messages.append(call_msg)
+                        turn_text = ""
 
                         # Execute each tool
                         for tc in tool_calls_data:
@@ -240,6 +243,7 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                                     "type": "tool_start",
                                     "tool": name,
                                     "query": args.get("query", ""),
+                                    "args": args,
                                 },
                             )
 
@@ -256,6 +260,8 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                                     "summary": tool_content[:200] + "..."
                                     if len(tool_content) > 200
                                     else tool_content,
+                                    "meta": result.get("meta") or {},
+                                    "error": result.get("error"),
                                 },
                             )
 

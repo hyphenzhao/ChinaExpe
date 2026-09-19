@@ -1,0 +1,15 @@
+{
+  "name": "玄学助手",
+  "short_name": "玄学助手",
+  "description": "紫微斗数 · 子平八字 排盘与 AI 解读",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/img/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

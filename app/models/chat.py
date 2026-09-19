@@ -27,7 +27,7 @@ class Session(BaseModel):
     """A chat session."""
     id: str = Field(default_factory=gen_id)
     title: str = "新对话"
-    mode: Literal["theory", "chart_ziwei", "chart_shishen"] = "theory"
+    mode: Literal["theory", "chart", "chart_ziwei", "chart_shishen"] = "theory"
     person: Optional[str] = None  # person identifier for chart reading
     model: str = ""
     provider: str = "ollama"
@@ -49,7 +49,7 @@ class SessionListItem(BaseModel):
 class CreateSessionRequest(BaseModel):
     """Request to create a new session."""
     title: str = "新对话"
-    mode: Literal["theory", "chart_ziwei", "chart_shishen"] = "theory"
+    mode: Literal["theory", "chart", "chart_ziwei", "chart_shishen"] = "theory"
     person: Optional[str] = None
     model: str = ""
     provider: str = "ollama"
@@ -61,3 +61,4 @@ class SendMessageRequest(BaseModel):
     mode: Optional[str] = None
     person: Optional[str] = None
     selected_context: Optional[dict] = None
+    view_context: Optional[dict] = None   # {chart, layer, level, date, selected_palace}

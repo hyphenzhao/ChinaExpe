@@ -163,3 +163,8 @@
         radial-gradient(ellipse at 80% 20%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
         radial-gradient(ellipse at 50% 80%, rgba(245, 158, 11, 0.03) 0%, transparent 50%);
 }
+
+/* Phones / reduced motion: static sky (saves battery, avoids repaint jank) */
+@media (max-width: 700px), (prefers-reduced-motion: reduce) {
+    .starfield::before, .starfield::after { animation: none !important; }
+}

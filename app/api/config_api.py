@@ -71,7 +71,14 @@ async def list_models(provider: str = "ollama") -> list[dict]:
 
     if provider == "deepseek" or not provider:
         if config.deepseek_api_key:
-            models.extend(DEEPSEEK_MODELS)
+            # live list from the API (includes newer models such as deepseek-v4-*), fallback to the static list
+            ok, _msg, names = await llm_service.test_deepseek_connection(config.deepseek_api_key, config.deepseek_base_url)
+            if ok and names:
+                models.extend({"name": n, "size": "—", "provider": "deepseek"} for n in names)
+            else:
+                models.extend(DEEPSEEK_MODELS)
+            if config.default_model and config.provider == "deepseek" and not any(m["name"] == config.default_model for m in models):
+                models.insert(0, {"name": config.default_model, "size": "—", "provider": "deepseek"})
         else:
             # Still show them but mark as needing key
             for m in DEEPSEEK_MODELS:
@@ -90,6 +97,9 @@ async def test_connection(req: TestConnectionRequest) -> TestConnectionResponse:
         return TestConnectionResponse(success=ok, message=msg, models=model_names)
     elif req.provider == "deepseek":
         api_key = req.api_key or ""
+        if not api_key or "***" in api_key:
+            # the UI echoes the masked key back; use the stored one
+            api_key = _load_config().deepseek_api_key
         base_url = req.base_url or "https://api.deepseek.com"
         ok, msg, model_names = await llm_service.test_deepseek_connection(api_key, base_url)
         return TestConnectionResponse(success=ok, message=msg, models=model_names)

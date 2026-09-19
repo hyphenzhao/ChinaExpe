@@ -83,6 +83,14 @@ _DIR_CN_MAP = {
     "love-and-marriage": "桃花 婚姻 感情",
     "money-and-wealth": "财运 财富 理财",
     "work-and-career": "事业 工作 职业",
+    "literature": "典籍",
+    "紫微斗数全书": "全书 紫微斗数 三合",
+    "紫微斗数续道藏本": "续道藏 紫微斗数",
+    "梁若瑜飞星问答": "梁若瑜 飞星 飞星派 宫干 四化",
+    "渊海子平": "渊海子平 子平 八字 十神",
+    "子平读书笔记": "子平 八字 笔记",
+    "方法论(skills)": "方法论 技能 解盘",
+    "紫微学习笔记": "教程 入门 紫微",
 }
 
 # ── Smart keyword extraction from user questions ─────────────────
@@ -120,6 +128,14 @@ _ZWDS_TERMS = [
     # 格局 concepts
     "三方四正", "对宫", "三合", "六合", "庙旺", "落陷", "得地",
     "空宫", "双星", "单星", "独坐", "同度", "会照", "拱照",
+    # 四化/自化/飞星 (extra)
+    "自化", "离心自化", "向心自化", "生年四化", "飞化", "飞星", "宫干", "来因宫", "四化派", "钦天四化", "三合派", "飞星派",
+    "大限四化", "流年四化", "小限", "斗君", "流月", "流日", "命主", "身主", "五行局",
+    # 神煞 (bazi)
+    "天乙贵人", "太极贵人", "文昌贵人", "福星贵人", "天德贵人", "月德贵人", "国印", "华盖", "驿马", "将星", "桃花", "咸池",
+    "羊刃", "阳刃", "禄神", "学堂", "词馆", "金舆", "劫煞", "亡神", "灾煞", "孤辰", "寡宿", "元辰", "勾绞", "童子", "六秀",
+    "阴差阳错", "魁罡", "十恶大败", "空亡", "纳音", "藏干", "地势", "长生", "沐浴", "冠带", "临官", "帝旺", "墓库", "胎元",
+    "大运", "起运", "月令", "格局", "食神制杀", "伤官配印", "官印相生", "财官", "从格", "身强", "身弱",
     # 十神 (bazi terms)
     "正官", "偏官", "七杀", "正印", "偏印", "枭神",
     "正财", "偏财", "食神", "伤官", "比肩", "劫财",
@@ -223,7 +239,7 @@ class LocalKnowledgeService:
         inverted: dict[str, list[str]] = {}
 
         for f in files:
-            rel = str(f.relative_to(_KB_PATH))
+            rel = f.relative_to(_KB_PATH).as_posix()   # posix so the index is portable between Windows and the NAS
             try:
                 content = f.read_text(encoding="utf-8", errors="ignore")
             except Exception:
@@ -235,11 +251,19 @@ class LocalKnowledgeService:
             # Extract search terms from multiple sources
             terms = self._extract_file_terms(f, title, content)
 
+            system = "ziwei"
+            fm = re.match(r"^---\n(.*?)\n---\n", content, re.S)
+            if fm:
+                m = re.search(r"^system:\s*(\S+)", fm.group(1), re.M)
+                if m:
+                    system = m.group(1)
             file_entries[rel] = {
                 "title": title,
                 "source": source,
                 "terms": sorted(terms),
                 "size": len(content),
+                "system": system,
+                "literature": rel.replace("\\", "/").startswith("literature/"),
             }
 
             # Populate inverted index
@@ -276,7 +300,7 @@ class LocalKnowledgeService:
             "elapsed": round(elapsed, 1),
         }
 
-    def search(self, query: str, limit: int = 5) -> tuple[list[dict], list[str]]:
+    def search(self, query: str, limit: int = 5, scope: str = "all") -> tuple[list[dict], list[str]]:
         """Search using the inverted index with smart keyword extraction.
 
         Returns (results, keywords_used) so the caller can show what was searched.
@@ -292,11 +316,11 @@ class LocalKnowledgeService:
 
         # Try index first
         if self._load_index():
-            results = self._search_index(search_query, limit)
+            results = self._search_index(search_query, limit, scope)
         else:
             self.build_index()
             if self._load_index():
-                results = self._search_index(search_query, limit)
+                results = self._search_index(search_query, limit, scope)
             else:
                 results = self._search_scan(search_query, limit)
 
@@ -353,6 +377,23 @@ class LocalKnowledgeService:
         title = filepath.stem
         source = ""
         body = content
+
+        # YAML front matter (knowledge_base/literature)
+        fm = re.match(r"^---\n(.*?)\n---\n", content, re.S)
+        if fm:
+            meta = {}
+            for line in fm.group(1).splitlines():
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    meta[k.strip()] = v.strip()
+            body = content[fm.end():]
+            body = re.sub(r"^\s*#\s+.+\n", "", body, count=1)
+            title = meta.get("title", title)
+            source = meta.get("source", "")
+            coll = meta.get("collection", "")
+            if coll:
+                title = f"{title}（{coll}）"
+            return title, source, body.strip()
 
         # Try ziwemy .txt header format
         header_match = re.match(
@@ -452,13 +493,15 @@ class LocalKnowledgeService:
 
     # ── index-based search ──────────────────────────────────────
 
-    def _search_index(self, query: str, limit: int = 5) -> list[dict]:
+    def _search_index(self, query: str, limit: int = 5, scope: str = "all") -> list[dict]:
         """Search using the precomputed inverted index with TF-IDF-like scoring."""
         idx = self._index
         if not idx:
             return []
 
         files_db = idx.get("files", {})
+        if scope in ("ziwei", "bazi"):
+            files_db = {k: v for k, v in files_db.items() if v.get("system", "ziwei") in (scope, "general")}
         inverted = idx.get("index", {})
         total_files = max(len(files_db), 1)
 
@@ -506,6 +549,8 @@ class LocalKnowledgeService:
             # Precision × Coverage: matched tokens over file term diversity
             quality = matched / (file_nterms ** 0.5)
             scores[fname] = scores[fname] * quality
+            if entry.get("literature"):
+                scores[fname] *= 1.6   # 典籍/方法论片段优先于网站文章
 
         if not scores:
             return []
@@ -549,7 +594,7 @@ class LocalKnowledgeService:
         """Read file content from knowledge base, with caching."""
         if relpath in self._content_cache:
             return self._content_cache[relpath]
-        f = _KB_PATH / relpath
+        f = _KB_PATH / relpath.replace("\\", "/")
         if f.exists():
             try:
                 content = f.read_text(encoding="utf-8", errors="ignore")

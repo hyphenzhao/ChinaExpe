@@ -1,4 +1,4 @@
-# Python virtual env
+# Python
 venv/
 __pycache__/
 *.pyc
@@ -12,8 +12,11 @@ build/
 .vscode/
 .idea/
 
-# Runtime data (contains API keys, sessions)
+# Runtime data (API keys, sessions, people, vectors, screenshots)
 data/
+
+# Generated knowledge chunks (re-create with 设置 → 导入典籍)
+knowledge_base/literature/
 
 # OS
 .DS_Store

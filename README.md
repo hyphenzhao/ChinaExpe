@@ -1,281 +1,93 @@
-# 玄学助手 (Metaphysics Assistant)
+# 玄学助手 (Metaphysics Assistant) v2
 
-互动式玄学助手 — 紫微斗数 & 十神·子平命理解盘。
+紫微斗数 · 子平八字 的排盘、学习与 AI 解读工作台。
 
-基于 FastAPI + 前端 SPA，支持 DeepSeek / Ollama 双后端，配备 LanceDB 知识库 RAG 检索。
+- **自研排盘引擎**（纯 Python，`app/engine/`）：紫微斗数安星、生年四化/自化/飞化、大限·小限·流年·流月·流日·流时；子平八字四柱十神藏干纳音空亡地势自坐神煞、起运大运流年流月流日。口径按**文墨天机默认**（真太阳时、正月初一分年、全书四化表）与**测测**八字口径，用四份文墨天机导出逐宫逐星做黄金测试（`tests/`）。
+- **命盘为中心的三栏界面**：左栏人物 + 按人物分组的对话；中栏命盘（四化/三合/飞星图层、点宫位看运限、底部大限→流年→流月→流日→流时条）；右栏 AI 对话（可折叠）。
+- **AI 工具化解盘**：AI 通过工具读取引擎输出（`get_chart / get_horoscope / get_fly / get_bazi / get_bazi_timeline`）、检索典籍（`search_knowledge`）、提出修改建议（`propose_person_update`，需用户确认）、记备注（`add_note`）。绝不让 AI 自己排盘。
+- **知识库**：紫微麦文章 + 导入的典籍（紫微斗数全书、续道藏本、梁若瑜飞星问答、渊海子平、学习笔记、方法论 skills），本地倒排索引 + LanceDB/bge-m3 向量混合检索。
 
-## 功能
-
-- **紫微斗数** — 命盘可视化、十二宫解读、四化分析
-- **八字十神·子平法** — 四柱排盘、日主强弱、格局喜忌
-- **AI 智能导入** — 粘贴文墨天机等排盘软件文本，自动解析为结构化命盘
-- **知识库 RAG** — 基于 LanceDB 的中文命理经典知识检索
-- **多模型支持** — DeepSeek API / 本地 Ollama
-- **SSE 流式对话** — 逐字输出，体验流畅
-
-## 目录结构
+## 目录
 
 ```
-ChinaExpe/
-├── app/
-│   ├── main.py                  # FastAPI 入口
-│   ├── api/
-│   │   ├── chat_api.py          # 对话 SSE 接口
-│   │   ├── charts_api.py        # 命盘 CRUD 接口
-│   │   ├── config_api.py        # 配置管理接口
-│   │   └── knowledge_api.py     # 知识库接口
-│   ├── models/
-│   │   ├── chat.py              # 会话/消息模型
-│   │   ├── chart.py             # 命盘数据模型
-│   │   └── config.py            # 配置模型
-│   ├── services/
-│   │   ├── agent_service.py     # System prompt & 上下文组装
-│   │   ├── llm_service.py       # DeepSeek/Ollama 统一流式接口
-│   │   ├── chart_service.py     # 命盘解析 & 前端数据变换
-│   │   ├── chart_import_service.py  # AI 智能排盘导入
-│   │   ├── skill_loader.py      # 从 SKILL.md 加载技能知识
-│   │   └── knowledge_service.py # LanceDB RAG 检索
-│   └── static/                  # 前端 SPA (HTML/CSS/JS)
-├── data/
-│   ├── config.json              # 运行时配置
-│   └── sessions/                # 对话会话持久化
-├── skills/                     # 命理技能包（内置）
-│   ├── ziwei-doushu/            #   紫微斗数
-│   ├── bazi-master/             #   八字大师
-│   ├── bazi-classical/          #   八字经典
-│   ├── ziping-zhengliu/         #   子平正解
-│   ├── ni-haixia-perspective/   #   倪海厦视角
-│   └── qimen-dunjia/            #   奇门遁甲
-├── requirements.txt
-├── setup.sh                     # 一键设置脚本
-├── start.sh                     # 开发启动脚本
-├── xuanxue-apache.conf          # Apache 反向代理配置
-└── xuanxue.service              # systemd 服务文件
+app/
+  engine/            排盘引擎（calendar / ziwei / bazi / wenmo_parser / settings）
+  vendor/lunar_python  内置的 6tail lunar-python（农历/节气/干支）
+  api/               people_api（人物+命盘）、chat_api（SSE 对话）、config_api、knowledge_api
+  services/          person_service（人物档案+引擎缓存）、tools、agent_service、llm_service、
+                     local_knowledge、knowledge_service、literature_importer
+  static/            index.html + js/v2 + css/v2（原生 JS，无构建）
+data/
+  people/<id>.json   人物档案（出生信息 + 设置 + 备注）= 唯一数据源
+  sessions/          对话
+  charts/            旧版手工命盘（仅作历史/校验参考，不再读取）
+  lancedb/           向量库（build-vectors 生成）
+knowledge_base/      紫微麦文章 + literature/（导入的典籍片段，带 YAML 头）
+tests/               黄金测试（fixtures = 文墨天机/测测导出）
+scripts/             migrate_people.py · build_vectors.py · restart_remote.sh · ui_smoke.py
 ```
 
-## 依赖
-
-### 必需
-
-| 组件 | 用途 |
-|------|------|
-| **Python 3.10+** | 运行后端 |
-| **DeepSeek API Key** 或 **Ollama** | LLM 推理 |
-
-### 可选
-
-| 组件 | 用途 | 不装的影响 |
-|------|------|-----------|
-| **Apache2** | 反向代理 + 静态文件服务 | 直接用 uvicorn 对外暴露即可 |
-| **Ollama + bge-m3** | LanceDB 知识库向量检索 | RAG 功能降级，不影响基础对话 |
-| **LanceDB 知识库** | 命理经典知识检索增强 | `is_available()` 返回 false，静默跳过 |
-| **命盘数据目录** | 已有命盘的 JSON 文件 | 只能通过 AI 导入或手动创建 |
-
-## 快速开始
-
-### 1. 安装 Python 依赖
+## 运行
 
 ```bash
-cd /path/to/ChinaExpe
-pip install -r requirements.txt
+pip install -r requirements.txt        # lunar_python 已内置，无需安装
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+# 打开 http://127.0.0.1:8765 ，右上 ⚙️ 配置 DeepSeek/Ollama
 ```
 
-### 2. 配置 LLM 后端
+测试：`pip install -r requirements-dev.txt && pytest tests -q`（公开测试，用虚构生辰：真太阳时、四柱、安星规则、生年四化、大限、流年流日干支、八字十神与大运流年链）。
+与文墨天机 / 测测真实导出逐项比对的金样测试含个人生辰，放在 `data/golden/`（不入库），存在时 `scripts/deploy.sh` 会一并运行：`pytest tests data/golden -q`。
 
-#### 方案 A：使用 DeepSeek（推荐，零运维）
+界面自检（需 `pip install playwright && playwright install chromium`）：`python scripts/ui_smoke.py http://127.0.0.1:8765`。
 
-创建 `data/config.json`：
+## 人物与排盘口径
 
-```json
-{
-  "provider": "deepseek",
-  "deepseek_api_key": "sk-your-api-key",
-  "deepseek_base_url": "https://api.deepseek.com",
-  "default_model": "deepseek-chat"
-}
-```
+人物档案字段：`display_name / gender / birth{solar 钟表时间, longitude, use_true_solar_time, hour_override} / settings{ziwei, bazi}`。
 
-#### 方案 B：使用本地 Ollama
+可选流派设置（`GET /api/people/meta/schools`）：四化表（全书默认 / 中州派 / 庚干天相忌）、火铃起法、天马年支/月支、年分界（正月初一/立春）、闰月处理、天伤天使、八字起运算法、晚子时日柱。默认全部 = 文墨天机。
 
-确保 Ollama 已运行并拉取了模型：
+校验：设置 → 「与文墨天机导出比对」，粘贴导出文本，逐宫逐星列差异。
+
+## API
+
+| 路径 | 说明 |
+|---|---|
+| `GET/POST /api/people`，`GET/PUT/DELETE /api/people/{id}` | 人物档案 |
+| `POST /api/people/{id}/notes` | 备注 |
+| `GET /api/people/{id}/ziwei` | 本命盘（palaces[].stars[]: name/category/brightness/birth_hua/self_hua_out/self_hua_in）+ decadals + fly |
+| `GET …/ziwei/horoscope?date=` | 指定日期五级运限 |
+| `GET …/ziwei/yearly-list?decadal=i`，`monthly-list?year=`，`daily-list?year=&month=&leap=`，`hourly-list?date=` | 运限条数据 |
+| `GET …/ziwei/fly?palace=i` | 宫干飞化 |
+| `GET /api/people/{id}/bazi`，`…/bazi/timeline?date=`，`…/bazi/liunian?dayun=i`，`…/bazi/liuyue?year=` | 八字 |
+| `POST /api/people/{id}/wenmo-compare` | 与文墨导出比对 |
+| `GET/POST /api/chats`，`POST /api/chats/{id}/messages`（SSE: token/tool_start/tool_result/done/error） | 对话 |
+| `POST /api/knowledge/import-literature`，`build-index`，`build-vectors`，`GET status`，`POST query` | 知识库 |
+
+## 部署（NAS）
+
+代码目录即 SMB 共享目录，改完直接：
 
 ```bash
-ollama pull qwen2.5:14b    # 或其他中文模型
+bash scripts/deploy.sh                    # pytest → JS 语法检查 → 重启 NAS 服务 → 开机启动核验 → 生产端 UI 自检
+bash scripts/restart_remote.sh            # 只重启：kill uvicorn，systemd 自动拉起，健康检查
+ssh haifeng@192.168.50.6 'cd /Volumes/Storage/Workspace/ChinaExpe && python3 scripts/build_vectors.py'   # 需要本机 Ollama bge-m3
 ```
 
-创建 `data/config.json`：
+Apache `:1248` 反代到 `127.0.0.1:8765`（`xuanxue-apache.conf`），systemd 单元见 `xuanxue.service`。
 
-```json
-{
-  "provider": "ollama",
-  "ollama_host": "http://127.0.0.1",
-  "ollama_port": 11434,
-  "default_model": "qwen2.5:14b"
-}
-```
-
-### 3. 启动
-
-**开发模式**（带热重载）：
+开机启动：`xuanxue.service` 已 `enabled`（`multi-user.target`，`Restart=always`），`apache2`、`ollama` 也已 enabled，`deploy.sh` 每次部署都会打印核验结果。如需修改单元文件（需要 sudo，普通账号做不了）：
 
 ```bash
-bash start.sh
-# 监听 http://127.0.0.1:8765
-```
-
-**生产模式**（无热重载）：
-
-```bash
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8765
-```
-
-### 4. 访问
-
-浏览器打开 `http://127.0.0.1:8765`，在设置页面配置 API 后端即可开始对话。
-
-## 生产部署
-
-### Apache 反向代理（可选）
-
-如果需要在公网提供服务，建议 uvicorn 只监听 localhost，前面挂 Apache：
-
-```bash
-# 1. 复制配置
-sudo cp xuanxue-apache.conf /etc/apache2/sites-available/xuanxue.conf
-
-# 2. 启用模块和站点
-sudo a2enmod proxy proxy_http
-sudo a2ensite xuanxue.conf
-sudo systemctl reload apache2
-```
-
-Apache 配置默认监听 **1248** 端口，反代到 `127.0.0.1:8765`。
-
-### systemd 开机自启
-
-```bash
-# 1. 安装服务（先按需修改 xuanxue.service 中的路径）
 sudo cp xuanxue.service /etc/systemd/system/xuanxue.service
-sudo systemctl daemon-reload
-
-# 2. 启动 & 设置开机自启
-sudo systemctl start xuanxue
-sudo systemctl enable xuanxue
-
-# 3. 查看状态
-sudo systemctl status xuanxue
-
-# 4. 查看日志
-journalctl -u xuanxue -f
+sudo systemctl daemon-reload && sudo systemctl enable --now xuanxue
 ```
 
-服务配置要点：
+手机端：≤700px 自动进入紧凑盘（盘头折叠条 + 12 宫精简 + 点宫位弹出底部详情），顶栏「🔍 放大」切换为可横滚/双指缩放的完整盘；运限条默认折叠成一行摘要；支持添加到主屏幕（PWA manifest，无 Service Worker）。
 
-```ini
-[Service]
-User=你的用户名
-WorkingDirectory=/path/to/ChinaExpe
-ExecStart=python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8765
-Restart=always          # 崩溃自动重启
-RestartSec=5            # 等 5 秒再重启
+## 典籍来源
 
-[Install]
-WantedBy=multi-user.target  # 开机自启
-```
-
-### 防火墙
-
-如果用 Apache 对外暴露，需要开放对应端口：
-
-```bash
-sudo nft add rule inet filter input tcp dport 1248 accept
-```
-
-## 外部依赖说明
-
-所有路径已改为项目相对路径，克隆即用。唯一的可选外部依赖：
-
-| 依赖 | 路径 | 说明 |
-|------|------|------|
-| LanceDB 知识库 | `~/.openclaw/memory/lancedb` | `knowledge_service.py:8` — 可修改为项目内路径 |
-
-如需修改 LanceDB 路径，编辑 `app/services/knowledge_service.py` 第 8 行的 `LANCE_DB_PATH`。
-
-## 技能系统
-
-技能文件内置于 `skills/` 目录，采用 SKILL.md 格式：
-
-```
-skills/
-├── ziwei-doushu/         # 紫微斗数
-│   ├── SKILL.md
-│   └── references/
-│       ├── calculation.md
-│       ├── stars.md
-│       ├── sihua.md
-│       └── patterns.md
-├── bazi-master/          # 八字大师
-│   ├── SKILL.md
-│   └── references/
-│       └── tiangan-dizhi.md
-├── bazi-classical/       # 八字经典
-│   ├── SKILL.md
-│   └── references/
-│       ├── wuxing-tables.md
-│       ├── shichen-table.md
-│       └── dayun-rules.md
-└── ziping-zhengliu/      # 子平正解
-    ├── SKILL.md
-    └── docs/
-        └── yuanhai_ziping.md
-```
-
-技能加载时会：
-1. 优先提取 `解释边界`、`核心规则`、`回应风格` 段落（确保客观中立的分析风格）
-2. 加载 SKILL.md 正文（去重后的方法论知识）
-3. 按需加载参考文件（星曜表、四化表等）
-
-## 知识库（可选）
-
-RAG 知识库使用 LanceDB 存储，需要：
-
-1. 安装 Ollama 并拉取嵌入模型：
-   ```bash
-   ollama pull bge-m3
-   ```
-
-2. 确保 LanceDB 数据库存在于 `~/.openclaw/memory/lancedb`，表名为 `ziwei_knowledge`
-
-如果知识库不可用，系统会自动降级，不影响基础对话功能。
-
-## API 路由
-
-| 路径 | 方法 | 说明 |
-|------|------|------|
-| `/api/health` | GET | 健康检查 |
-| `/api/config` | GET/PUT | 获取/更新 LLM 配置 |
-| `/api/config/models` | GET | 列出可用模型 |
-| `/api/config/test` | POST | 测试 API 连接 |
-| `/api/chats` | GET/POST | 列出/创建会话 |
-| `/api/chats/{id}` | GET/DELETE | 获取/删除会话 |
-| `/api/chats/{id}/messages` | POST | 发送消息（SSE 流式） |
-| `/api/chats/{id}/messages/{mid}` | DELETE | 删除消息 |
-| `/api/people` | GET/POST | 列出/创建人物 |
-| `/api/people/{name}` | DELETE | 删除人物及命盘 |
-| `/api/people/{name}/{type}` | GET/DELETE | 获取/删除命盘 (ziwei/shishen) |
-| `/api/people/{name}/meta` | PUT | 更新人物显示名 |
-| `/api/people/{name}/import` | POST | AI 智能导入命盘 |
-| `/api/knowledge` | GET | 查询知识库 |
-
-## 技术栈
-
-- **后端**: FastAPI + uvicorn (Python)
-- **前端**: 原生 JavaScript SPA，无框架
-- **LLM**: DeepSeek API / Ollama (OpenAI 兼容接口)
-- **向量数据库**: LanceDB
-- **嵌入模型**: bge-m3 (via Ollama)
-- **反向代理**: Apache2 (可选)
+`literature_importer.py` 从 OpenClaw-Space（`OPENCLAW_SPACE` 环境变量或 `/Volumes/Storage/OpenClaw-Space`）读取：紫微斗数全书章节、紫微典籍（续道藏本、梁若瑜飞星问答）、子平读书笔记（渊海子平全文与笔记）、Notepad 教程，以及本仓库 `skills/` 的方法论文档；切成 ≤2600 字片段写入 `knowledge_base/literature/`。
 
 ## License
 
-MIT
+MIT（内置 lunar-python：MIT）
