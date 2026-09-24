@@ -34,6 +34,11 @@ class PersonService:
     def __init__(self):
         self._astro_cache: dict[str, tuple[str, Astrolabe]] = {}
         self._bazi_cache: dict[str, tuple[str, dict]] = {}
+        self._save_hooks: list = []          # called after every successful save
+
+    def on_save(self, fn) -> None:
+        """Register a callback run after a person is written (see export_service)."""
+        self._save_hooks.append(fn)
 
     # ---------------------------------------------------------------- store
     def _path(self, pid: str) -> Path:
@@ -58,6 +63,11 @@ class PersonService:
         self._path(person.id).write_text(person.model_dump_json(indent=2), encoding="utf-8")
         self._astro_cache.pop(person.id, None)
         self._bazi_cache.pop(person.id, None)
+        for fn in self._save_hooks:
+            try:
+                fn(person)
+            except Exception:
+                pass                          # an export failure must not block saving
         return person
 
     def create(self, req: PersonCreate) -> Person:

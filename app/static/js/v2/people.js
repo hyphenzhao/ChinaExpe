@@ -121,6 +121,23 @@ function pickCity() {
     if (v) document.getElementById('pf-lon').value = v;
 }
 
+/* Re-export the AI-readable bundle for the current person (运限按今天重算) */
+async function exportPersonJson(pid) {
+    const id = pid || AppState.personId;
+    if (!id) { toast('请先选择人物', true); return; }
+    try {
+        const r = await API.post(`/api/people/${id}/export`, {});
+        toast(`已导出 ${r.json.split(/[\\/]/).pop()} · ${(r.bytes / 1024).toFixed(0)} KB · 运限 ${r.as_of}`);
+    } catch (e) { toast('导出失败: ' + e.message, true); }
+}
+
+async function exportAllJson() {
+    try {
+        const r = await API.post('/api/people/export-all', {});
+        toast(`已导出 ${r.count} 人到 data/exports`);
+    } catch (e) { toast('导出失败: ' + e.message, true); }
+}
+
 async function savePersonForm() {
     const out = document.getElementById('pf-result');
     const settings = { ziwei: {}, bazi: {} };
@@ -147,7 +164,7 @@ async function savePersonForm() {
         await loadPeople();
         AppState.ziwei = null; AppState.bazi = null; AppState.baziTimeline = null;
         await selectPerson(p.id, { keepSession: true });
-        toast('已保存并重新排盘');
+        toast(`已保存并重新排盘，命盘已导出 data/exports/${p.id}.json`);
     } catch (e) { out.className = 'test-result error'; out.textContent = e.message; }
 }
 

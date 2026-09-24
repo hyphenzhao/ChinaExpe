@@ -13,6 +13,7 @@ from ..engine.ziwei import hua as HUA
 from ..engine.bazi import timeline as TL
 from ..engine.wenmo_parser import parse_wenmo_export
 from ..models.person import Person, PersonCreate, PersonSummary, PersonUpdate
+from ..services import export_service
 from ..services.person_service import person_service
 
 router = APIRouter(prefix="/api/people", tags=["people"])
@@ -87,6 +88,23 @@ async def delete_note(pid: str, index: int):
         p.notes.pop(index)
         person_service.save(p)
     return p
+
+
+# ------------------------------------------------------------------ export
+@router.post("/export-all")
+async def export_all(date: Optional[str] = None):
+    """Rewrite data/exports for every person (JSON + Markdown + index)."""
+    rows = export_service.write_all(_date(date))
+    return {"dir": str(export_service.EXPORT_DIR), "count": len(rows), "files": rows}
+
+
+@router.post("/{pid}/export")
+async def export_person(pid: str, date: Optional[str] = None):
+    """Rewrite data/exports/<pid>.json and .md; 运限 uses `date` or now."""
+    _person(pid)
+    row = export_service.write_person(pid, _date(date))
+    export_service.write_index()
+    return row
 
 
 # ------------------------------------------------------------------- ziwei

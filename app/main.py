@@ -23,6 +23,13 @@ async def lifespan(app: FastAPI):
     data_dir.mkdir(parents=True, exist_ok=True)
     sessions_dir.mkdir(parents=True, exist_ok=True)
     people_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "exports").mkdir(parents=True, exist_ok=True)
+    try:
+        # refresh the AI-readable chart bundles so 运限 matches today's date
+        from .services import export_service
+        export_service.write_all()
+    except Exception:
+        pass
     yield
 
 

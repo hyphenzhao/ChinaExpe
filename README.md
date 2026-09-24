@@ -6,6 +6,7 @@
 - **命盘为中心的三栏界面**：左栏人物 + 按人物分组的对话；中栏命盘（四化/三合/飞星图层、点宫位看运限、底部大限→流年→流月→流日→流时条）；右栏 AI 对话（可折叠）。
 - **AI 工具化解盘**：AI 通过工具读取引擎输出（`get_chart / get_horoscope / get_fly / get_bazi / get_bazi_timeline`）、检索典籍（`search_knowledge`）、提出修改建议（`propose_person_update`，需用户确认）、记备注（`add_note`）。绝不让 AI 自己排盘。
 - **知识库**：紫微麦文章 + 导入的典籍（紫微斗数全书、续道藏本、梁若瑜飞星问答、渊海子平、学习笔记、方法论 skills），本地倒排索引 + LanceDB/bge-m3 向量混合检索。
+- **命盘导出**：人物每次保存都会把整张盘写成 `data/exports/<id>.json`（机器读）与 `.md`（人读），供外部 AI 会话直接读取，不必自己排盘。典籍完整原文另存 `data/classics/`，配 `.claude/skills/jiepan` 解盘工作法。
 
 ## 目录
 
@@ -19,12 +20,19 @@ app/
   static/            index.html + js/v2 + css/v2（原生 JS，无构建）
 data/
   people/<id>.json   人物档案（出生信息 + 设置 + 备注）= 唯一数据源
+  exports/<id>.json  排盘结果导出（紫微+八字+运限+文字版），保存人物时自动刷新
+  exports/<id>.md    同一张盘的文字版；index.json 是人物清单
+  classics/          典籍完整原文（按派别分目录，供 AI 会话精读）+ 书单.md
+  readings/          解盘记录与验证台账（由解盘会话写入）
   sessions/          对话
   charts/            旧版手工命盘（仅作历史/校验参考，不再读取）
   lancedb/           向量库（build-vectors 生成）
+  golden/            私有金样测试（真实导出，含个人生辰，不入库）
 knowledge_base/      紫微麦文章 + literature/（导入的典籍片段，带 YAML 头）
-tests/               黄金测试（fixtures = 文墨天机/测测导出）
-scripts/             migrate_people.py · build_vectors.py · restart_remote.sh · ui_smoke.py
+tests/               公开测试（虚构生辰）
+scripts/             migrate_people.py · build_vectors.py · build_classics.py ·
+                     fetch_classics.py · restart_remote.sh · ui_smoke.py · deploy.sh
+.claude/skills/jiepan/  解盘会话用的 skill（读导出 JSON + 典籍，禁止自行排盘）
 ```
 
 ## 运行
@@ -60,6 +68,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 | `GET …/ziwei/fly?palace=i` | 宫干飞化 |
 | `GET /api/people/{id}/bazi`，`…/bazi/timeline?date=`，`…/bazi/liunian?dayun=i`，`…/bazi/liuyue?year=` | 八字 |
 | `POST /api/people/{id}/wenmo-compare` | 与文墨导出比对 |
+| `POST /api/people/{id}/export?date=`，`POST /api/people/export-all?date=` | 重写 `data/exports` 导出（运限按 date 或当天） |
 | `GET/POST /api/chats`，`POST /api/chats/{id}/messages`（SSE: token/tool_start/tool_result/done/error） | 对话 |
 | `POST /api/knowledge/import-literature`，`build-index`，`build-vectors`，`GET status`，`POST query` | 知识库 |
 
@@ -83,6 +92,22 @@ sudo systemctl daemon-reload && sudo systemctl enable --now xuanxue
 ```
 
 手机端：≤700px 自动进入紧凑盘（盘头折叠条 + 12 宫精简 + 点宫位弹出底部详情），顶栏「🔍 放大」切换为可横滚/双指缩放的完整盘；运限条默认折叠成一行摘要；支持添加到主屏幕（PWA manifest，无 Service Worker）。
+
+## 给外部 AI 会话用的命盘与典籍
+
+```bash
+python scripts/build_classics.py      # 把 knowledge_base/literature 的切片拼回整本书
+python scripts/fetch_classics.py      # 下载公有领域子平古籍（算准网），已存在的跳过
+curl -X POST http://192.168.50.6:1248/api/people/export-all   # 按今天重算运限并导出
+```
+
+`data/exports/<id>.json` 的结构：`person`（出生与备注）、`ziwei`（十二宫星曜、生年四化、
+`self_hua_out` 离心自化、`self_hua_in` 向心自化、`fly` 十二宫飞化、`decadals`）、
+`ziwei_horoscope_now`（五级运限）、`ziwei_yearly_list` / `ziwei_monthly_list`、
+`bazi`、`bazi_timeline_now`、`text`（同内容的中文文字版）。运限以导出时刻为准，换日期请调接口。
+
+解盘会话在本目录开 Claude Code，使用 `.claude/skills/jiepan`：只读导出 JSON，禁止自行排盘，
+引用典籍必须给文件与行号，结论写入 `data/readings/`。
 
 ## 典籍来源
 
