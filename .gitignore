@@ -7,8 +7,10 @@ dist/
 build/
 
 # IDE / Editor
+# 解盘 skill 入库，其余本地设置不入库
 .claude/*
-!.claude/skills/          # 解盘 skill 入库，其余本地设置不入库
+!.claude/skills
+!.claude/skills/**
 .codegraph/
 .vscode/
 .idea/
