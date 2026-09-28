@@ -14,12 +14,14 @@ CONFIG_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "config.j
 
 
 def load() -> ApiConfig:
+    from . import model_registry          # local import: registry imports models.config only
+
     if CONFIG_FILE.exists():
         try:
-            return ApiConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
+            return model_registry.migrate(ApiConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8"))))
         except Exception:
             pass
-    return ApiConfig()
+    return model_registry.migrate(ApiConfig())
 
 
 def save(config: ApiConfig) -> None:

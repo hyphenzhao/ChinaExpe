@@ -11,7 +11,13 @@ from typing import AsyncGenerator, Optional
 
 import httpx
 
+from ..models.config import ChatOptions
+
 ANTHROPIC_VERSION = "2023-06-01"
+# 思考预算（tokens）：Anthropic 要求 ≥1024 且 max_tokens 必须大于预算
+ANTHROPIC_BUDGET = {"low": 2048, "medium": 8192, "high": 24576}
+OPENAI_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
+RETRY_STATUS = (400, 404, 422)          # 参数不被接受时，去掉思考参数重试一次
 
 
 def _proxy(provider: str) -> Optional[str]:
@@ -49,11 +55,14 @@ class LLMService:
         openai_base_url: str = "https://api.openai.com",
         anthropic_api_key: str = "",
         anthropic_base_url: str = "https://api.anthropic.com",
+        options: Optional[ChatOptions] = None,
     ) -> AsyncGenerator[dict, None]:
         """Stream a chat completion from the configured provider.
 
-        Yields dicts with type 'token' ({'content': str}) or 'tool_calls'
-        ({'calls': [...], 'reasoning_content': str}).
+        Yields dicts with type 'token' ({'content': str}), 'thinking'
+        ({'content': str}) or 'tool_calls' ({'calls': [...],
+        'reasoning_content': str, 'thinking_blocks': [...]}).
+        `options` carries the per-request thinking level.
         """
         if provider == "ollama":
             async for event in self._stream_ollama(
@@ -64,12 +73,12 @@ class LLMService:
             key = deepseek_api_key if provider == "deepseek" else openai_api_key
             base = deepseek_base_url if provider == "deepseek" else openai_base_url
             async for event in self._stream_openai_compatible(
-                messages, model, key, base, tools, provider
+                messages, model, key, base, tools, provider, options
             ):
                 yield event
         elif provider == "anthropic":
             async for event in self._stream_anthropic(
-                messages, model, anthropic_api_key, anthropic_base_url, tools
+                messages, model, anthropic_api_key, anthropic_base_url, tools, options
             ):
                 yield event
         else:
@@ -161,6 +170,7 @@ class LLMService:
         base_url: str,
         tools: Optional[list[dict]] = None,
         provider: str = "deepseek",
+        options: Optional[ChatOptions] = None,
     ) -> AsyncGenerator[dict, None]:
         """Stream from an OpenAI-compatible API (DeepSeek, OpenAI) with tool calls."""
         label = "OpenAI" if provider == "openai" else "DeepSeek"
@@ -173,79 +183,90 @@ class LLMService:
         payload = {"model": model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
+        # DeepSeek 的思考由模型本身决定，不接受档位参数；只有 OpenAI 下发 reasoning_effort
+        extra: dict = {}
+        if provider == "openai" and options and options.thinking in OPENAI_EFFORT:
+            extra["reasoning_effort"] = OPENAI_EFFORT[options.thinking]
+        attempts = [{**payload, **extra}] + ([payload] if extra else [])
 
         try:
             async with _client(provider) as client:
-                async with client.stream(
-                    "POST", url, json=payload, headers=headers
-                ) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        yield {
-                            "type": "token",
-                            "content": f"[错误] {label} API 返回 {resp.status_code}: {body.decode()[:200]}",
-                        }
-                        return
-
-                    # Accumulate tool call deltas by index
-                    tool_call_buf: dict[int, dict] = {}
-                    # Thinking mode: the reasoning must be passed back to the API
-                    # together with the tool calls in the follow-up request.
-                    reasoning = ""
-
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            # Emit any accumulated tool calls
-                            if tool_call_buf:
-                                calls = [
-                                    tool_call_buf[i]
-                                    for i in sorted(tool_call_buf.keys())
-                                ]
-                                yield {"type": "tool_calls", "calls": calls,
-                                       "reasoning_content": reasoning}
+                for attempt, body_json in enumerate(attempts):
+                    async with client.stream(
+                        "POST", url, json=body_json, headers=headers
+                    ) as resp:
+                        if resp.status_code != 200:
+                            body = await resp.aread()
+                            # 参数不被接受时，去掉思考参数再试一次（还没吐过 token，安全）
+                            if resp.status_code in RETRY_STATUS and attempt + 1 < len(attempts):
+                                continue
+                            yield {
+                                "type": "token",
+                                "content": f"[错误] {label} API 返回 {resp.status_code}: {body.decode()[:200]}",
+                            }
                             return
 
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                        # Accumulate tool call deltas by index
+                        tool_call_buf: dict[int, dict] = {}
+                        # Thinking mode: the reasoning must be passed back to the API
+                        # together with the tool calls in the follow-up request.
+                        reasoning = ""
 
-                        choices = data.get("choices", [])
-                        if not choices:
-                            continue
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data: "):
+                                continue
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                # Emit any accumulated tool calls
+                                if tool_call_buf:
+                                    calls = [
+                                        tool_call_buf[i]
+                                        for i in sorted(tool_call_buf.keys())
+                                    ]
+                                    yield {"type": "tool_calls", "calls": calls,
+                                           "reasoning_content": reasoning}
+                                return
 
-                        delta = choices[0].get("delta", {})
+                            try:
+                                data = json.loads(data_str)
+                            except json.JSONDecodeError:
+                                continue
 
-                        rc = delta.get("reasoning_content")
-                        if rc:
-                            reasoning += rc
+                            choices = data.get("choices", [])
+                            if not choices:
+                                continue
 
-                        # Text content
-                        content = delta.get("content", "")
-                        if content:
-                            yield {"type": "token", "content": content}
+                            delta = choices[0].get("delta", {})
 
-                        # Tool call deltas (accumulate)
-                        tc_deltas = delta.get("tool_calls", [])
-                        for tc in tc_deltas:
-                            idx = tc.get("index", 0)
-                            if idx not in tool_call_buf:
-                                tool_call_buf[idx] = {
-                                    "id": "",
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""},
-                                }
-                            buf = tool_call_buf[idx]
-                            if "id" in tc:
-                                buf["id"] = tc["id"]
-                            func = tc.get("function", {})
-                            if "name" in func:
-                                buf["function"]["name"] = func["name"]
-                            if "arguments" in func:
-                                buf["function"]["arguments"] += func["arguments"]
+                            rc = delta.get("reasoning_content")
+                            if rc:
+                                reasoning += rc
+                                yield {"type": "thinking", "content": rc}
+
+                            # Text content
+                            content = delta.get("content", "")
+                            if content:
+                                yield {"type": "token", "content": content}
+
+                            # Tool call deltas (accumulate)
+                            tc_deltas = delta.get("tool_calls", [])
+                            for tc in tc_deltas:
+                                idx = tc.get("index", 0)
+                                if idx not in tool_call_buf:
+                                    tool_call_buf[idx] = {
+                                        "id": "",
+                                        "type": "function",
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                buf = tool_call_buf[idx]
+                                if "id" in tc:
+                                    buf["id"] = tc["id"]
+                                func = tc.get("function", {})
+                                if "name" in func:
+                                    buf["function"]["name"] = func["name"]
+                                if "arguments" in func:
+                                    buf["function"]["arguments"] += func["arguments"]
+                        return
 
         except httpx.ConnectError:
             hint = "；已开启跳板但连不上，检查设置里的跳板状态" if _proxy(provider) else ""
@@ -273,6 +294,10 @@ class LLMService:
                 continue
             if role == "assistant" and m.get("tool_calls"):
                 blocks = []
+                # extended thinking: the thinking block that preceded a tool_use
+                # must be sent back untouched, or the API rejects the follow-up
+                for tb in m.get("thinking_blocks") or []:
+                    blocks.append(tb)
                 if m.get("content"):
                     blocks.append({"type": "text", "text": m["content"]})
                 for tc in m["tool_calls"]:
@@ -300,6 +325,7 @@ class LLMService:
         api_key: str,
         base_url: str,
         tools: Optional[list[dict]] = None,
+        options: Optional[ChatOptions] = None,
     ) -> AsyncGenerator[dict, None]:
         """Stream from the Anthropic Messages API, emitting the same events."""
         system, msgs, atools = self._to_anthropic(messages, tools)
@@ -307,46 +333,82 @@ class LLMService:
         url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
         headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION,
                    "content-type": "application/json"}
-        payload: dict = {"model": model, "messages": msgs, "max_tokens": 8192, "stream": True}
+        base_max = (options.max_tokens if options else 0) or 8192
+        payload: dict = {"model": model, "messages": msgs, "max_tokens": base_max, "stream": True}
         if system:
             payload["system"] = system
         if atools:
             payload["tools"] = atools
+        extra: dict = {}
+        level = options.thinking if options else ""
+        if level in ANTHROPIC_BUDGET:
+            budget = ANTHROPIC_BUDGET[level]
+            extra["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            extra["max_tokens"] = max(base_max, budget + 1024)   # API 要求 max_tokens > budget
+        attempts = [{**payload, **extra}] + ([payload] if extra else [])
         try:
             async with _client("anthropic") as client:
-                async with client.stream("POST", url, json=payload, headers=headers) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        yield {"type": "token",
-                               "content": f"[错误] Anthropic API 返回 {resp.status_code}: {body.decode()[:200]}"}
+                for attempt, body_json in enumerate(attempts):
+                    async with client.stream("POST", url, json=body_json, headers=headers) as resp:
+                        if resp.status_code != 200:
+                            body = await resp.aread()
+                            if resp.status_code in RETRY_STATUS and attempt + 1 < len(attempts):
+                                continue        # 模型不支持扩展思考，去掉参数重试
+                            yield {"type": "token",
+                                   "content": f"[错误] Anthropic API 返回 {resp.status_code}: {body.decode()[:200]}"}
+                            return
+                        blocks: dict[int, dict] = {}
+                        async for line in resp.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            try:
+                                data = json.loads(line[5:].strip())
+                            except json.JSONDecodeError:
+                                continue
+                            etype = data.get("type")
+                            idx = data.get("index", 0)
+                            if etype == "content_block_start":
+                                blk = data.get("content_block", {})
+                                blocks[idx] = {"type": blk.get("type"), "id": blk.get("id", ""),
+                                               "name": blk.get("name", ""), "json": "",
+                                               "text": "", "signature": "", "data": blk.get("data", "")}
+                            elif etype == "content_block_delta":
+                                d = data.get("delta", {})
+                                dtype = d.get("type")
+                                if dtype == "text_delta" and d.get("text"):
+                                    yield {"type": "token", "content": d["text"]}
+                                elif dtype == "input_json_delta":
+                                    b = blocks.setdefault(idx, {"type": "tool_use", "id": "", "name": "",
+                                                                "json": "", "text": "", "signature": ""})
+                                    b["json"] += d.get("partial_json", "")
+                                elif dtype == "thinking_delta" and d.get("thinking"):
+                                    b = blocks.setdefault(idx, {"type": "thinking", "id": "", "name": "",
+                                                                "json": "", "text": "", "signature": ""})
+                                    b["text"] += d["thinking"]
+                                    yield {"type": "thinking", "content": d["thinking"]}
+                                elif dtype == "signature_delta":
+                                    b = blocks.setdefault(idx, {"type": "thinking", "id": "", "name": "",
+                                                                "json": "", "text": "", "signature": ""})
+                                    b["signature"] += d.get("signature", "")
+                            elif etype == "message_stop":
+                                break
+                        ordered = [b for _, b in sorted(blocks.items())]
+                        calls = [{"id": b["id"], "type": "function",
+                                  "function": {"name": b["name"], "arguments": b["json"] or "{}"}}
+                                 for b in ordered if b.get("type") == "tool_use"]
+                        if calls:
+                            thinking_blocks = []
+                            for b in ordered:
+                                if b.get("type") == "thinking" and b.get("text"):
+                                    thinking_blocks.append({"type": "thinking", "thinking": b["text"],
+                                                            "signature": b.get("signature", "")})
+                                elif b.get("type") == "redacted_thinking" and b.get("data"):
+                                    thinking_blocks.append({"type": "redacted_thinking", "data": b["data"]})
+                            event = {"type": "tool_calls", "calls": calls}
+                            if thinking_blocks:
+                                event["thinking_blocks"] = thinking_blocks
+                            yield event
                         return
-                    blocks: dict[int, dict] = {}
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        try:
-                            data = json.loads(line[5:].strip())
-                        except json.JSONDecodeError:
-                            continue
-                        etype = data.get("type")
-                        if etype == "content_block_start":
-                            blk = data.get("content_block", {})
-                            blocks[data.get("index", 0)] = {"type": blk.get("type"), "id": blk.get("id", ""),
-                                                            "name": blk.get("name", ""), "json": ""}
-                        elif etype == "content_block_delta":
-                            d = data.get("delta", {})
-                            if d.get("type") == "text_delta" and d.get("text"):
-                                yield {"type": "token", "content": d["text"]}
-                            elif d.get("type") == "input_json_delta":
-                                b = blocks.setdefault(data.get("index", 0), {"type": "tool_use", "id": "", "name": "", "json": ""})
-                                b["json"] += d.get("partial_json", "")
-                        elif etype == "message_stop":
-                            break
-                    calls = [{"id": b["id"], "type": "function",
-                              "function": {"name": b["name"], "arguments": b["json"] or "{}"}}
-                             for _, b in sorted(blocks.items()) if b.get("type") == "tool_use"]
-                    if calls:
-                        yield {"type": "tool_calls", "calls": calls}
         except httpx.ConnectError:
             hint = "；已开启跳板但连不上，检查设置里的跳板状态" if _proxy("anthropic") else "；大陆网络通常需要开启跳板"
             yield {"type": "token", "content": f"[错误] 无法连接到 Anthropic API ({base_url}){hint}"}

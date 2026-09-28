@@ -1,11 +1,14 @@
 """Configuration API routes."""
-from fastapi import APIRouter
+import time
+
+from fastapi import APIRouter, HTTPException
 
 from ..models.config import (
-    ApiConfig, ApiConfigResponse,
+    PROVIDERS, THINKING_LABELS, THINKING_LEVELS,
+    ApiConfig, ApiConfigResponse, CatalogModel, CatalogResponse, LibraryUpdate, ModelPick,
     TestConnectionRequest, TestConnectionResponse,
 )
-from ..services import config_store, proxy_service
+from ..services import config_store, model_registry, proxy_service
 from ..services.llm_service import llm_service
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -39,57 +42,171 @@ def _keep_masked_keys(new: ApiConfig, old: ApiConfig) -> ApiConfig:
     return new
 
 
+def _keep_library(new: ApiConfig, old: ApiConfig) -> ApiConfig:
+    """整体 PUT 不带模型库时别把它清空；清空请用 PUT /api/config/library。"""
+    if not new.enabled_models and old.enabled_models:
+        new.enabled_models = old.enabled_models
+    return new
+
+
+# live model lists are hit often by the pickers; cache them briefly
+_models_cache: dict[str, tuple[float, list[dict]]] = {}
+MODELS_TTL = 300.0
+
+
 @router.get("")
 async def get_config() -> ApiConfigResponse:
     """Get current API configuration (keys masked)."""
     return ApiConfigResponse.from_config(_load_config())
 
 
+PROXY_FIELDS = ("proxy_enabled", "proxy_url", "proxy_providers", "proxy_ssh_host",
+                "proxy_ssh_user", "proxy_ssh_port", "proxy_autostart")
+
+
 @router.put("")
 async def update_config(config: ApiConfig):
-    """Update API configuration and apply the 跳板 setting."""
-    config = _keep_masked_keys(config, _load_config())
+    """保存提供商与模型配置。
+
+    **不碰跳板**：跳板字段一律沿用磁盘上的值，改跳板请用 PUT /api/config/proxy。
+    以前两者混在一个保存按钮里，页面上没勾选的复选框会把正在用的隧道悄悄停掉。
+    """
+    old = _load_config()
+    config = _keep_library(_keep_masked_keys(config, old), old)
+    for field in PROXY_FIELDS:
+        setattr(config, field, getattr(old, field))
     _save_config(config)
-    proxy = {}
+    return {"success": True, "message": "配置已保存", "proxy": proxy_service.snapshot(config)}
+
+
+@router.put("/proxy")
+async def update_proxy(settings: dict):
+    """只改跳板设置并立即生效（启用则起隧道，停用则停自己起的那条）。"""
+    cfg = _load_config()
+    unknown = [k for k in settings if k not in PROXY_FIELDS]
+    if unknown:
+        raise HTTPException(400, f"不是跳板设置项: {', '.join(unknown)}")
+    for k, v in settings.items():
+        setattr(cfg, k, v)
+    _save_config(cfg)
     try:
-        if config.proxy_enabled:
-            proxy = proxy_service.ensure(config)
-        else:
-            proxy = proxy_service.stop(config)
+        result = proxy_service.ensure(cfg) if cfg.proxy_enabled else proxy_service.stop(cfg)
     except Exception as e:
-        proxy = {"success": False, "message": f"跳板处理失败: {e}"}
-    return {"success": True, "message": "配置已保存", "proxy": proxy}
+        result = {"success": False, "message": f"跳板处理失败: {e}"}
+    return {"success": True, "message": "跳板设置已保存", "proxy": result}
 
 
 @router.get("/models")
-async def list_models(provider: str = "ollama") -> list[dict]:
-    """List available models for the given provider."""
+async def list_models(provider: str = "ollama", refresh: int = 0) -> list[dict]:
+    """List models for one provider (or all when provider is empty).
+
+    Rows carry the inferred capabilities and `in_library`, so the settings page
+    can render a checkbox plus a 思考 badge per row.  A row marked `stale` means
+    the live list could not be fetched and this is the hardcoded fallback.
+    """
     config = _load_config()
     models: list[dict] = []
+    in_library = {(m.provider, m.model) for m in config.enabled_models}
+
+    def _decorate(rows: list[dict]) -> list[dict]:
+        out = []
+        for r in rows:
+            caps = model_registry.infer_caps(r.get("provider", ""), r.get("name", ""))
+            out.append({**r, "in_library": (caps.provider, caps.model) in in_library,
+                        "supports_tools": caps.supports_tools, "thinking": caps.thinking,
+                        "thinking_levels": caps.thinking_levels,
+                        "default_thinking": caps.default_thinking})
+        return out
 
     if provider == "ollama" or not provider:
         models.extend(await llm_service.list_ollama_models(config.ollama_host, config.ollama_port))
 
     async def _live(name: str, key: str, base: str, static: list[dict]):
         if not key:
-            models.extend({**m, "needs_key": True} for m in static)
+            models.extend({**m, "needs_key": True, "stale": True} for m in static)
             return
-        ok, _msg, names = await llm_service._list_models_http(name, key, base)
+        cache_key = f"{name}|{base}"
+        hit = _models_cache.get(cache_key)
+        if hit and not refresh and time.time() - hit[0] < MODELS_TTL:
+            models.extend(hit[1])
+            return
+        ok, msg, names = await llm_service._list_models_http(name, key, base)
         if ok and names:
-            models.extend({"name": n, "size": "—", "provider": name} for n in names)
+            rows = [{"name": n, "size": "—", "provider": name} for n in names]
+            _models_cache[cache_key] = (time.time(), rows)
         else:
-            models.extend(static)
+            rows = [{**m, "stale": True, "error": msg} for m in static]
+        models.extend(rows)
         if config.default_model and config.provider == name and not any(m["name"] == config.default_model for m in models):
             models.insert(0, {"name": config.default_model, "size": "—", "provider": name})
 
     if provider == "deepseek" or not provider:
         await _live("deepseek", config.deepseek_api_key, config.deepseek_base_url, DEEPSEEK_MODELS)
-    if provider == "openai":
+    if provider == "openai" or not provider:
         await _live("openai", config.openai_api_key, config.openai_base_url, OPENAI_MODELS)
-    if provider == "anthropic":
+    if provider == "anthropic" or not provider:
         await _live("anthropic", config.anthropic_api_key, config.anthropic_base_url, ANTHROPIC_MODELS)
 
-    return models
+    return _decorate(models)
+
+
+# ------------------------------------------------------------------ 模型库
+@router.get("/library")
+async def get_library():
+    """模型库与默认模型（不含任何密钥）。"""
+    cfg = _load_config()
+    return {"models": cfg.enabled_models,
+            "default": {"provider": cfg.provider, "model": cfg.default_model}}
+
+
+@router.put("/library")
+async def put_library(req: LibraryUpdate):
+    """保存模型库；可同时指定默认模型。"""
+    cfg = _load_config()
+    for m in req.models:
+        if m.provider not in PROVIDERS:
+            raise HTTPException(400, f"未知的提供商: {m.provider}")
+        if not (m.model or "").strip():
+            raise HTTPException(400, "模型 ID 不能为空")
+    cfg.enabled_models = model_registry.normalize(req.models)
+
+    message = "已保存模型库"
+    pick = req.default
+    if pick and pick.model and any((m.provider, m.model) == (pick.provider, pick.model)
+                                   for m in cfg.enabled_models):
+        cfg.provider, cfg.default_model = pick.provider, pick.model
+    elif cfg.enabled_models and not any(
+            (m.provider, m.model) == (cfg.provider, cfg.default_model) for m in cfg.enabled_models):
+        first = cfg.enabled_models[0]
+        cfg.provider, cfg.default_model = first.provider, first.model
+        message += f"；默认模型已改为 {first.label or first.model}"
+    _save_config(cfg)
+    return {"success": True, "message": message, "models": cfg.enabled_models,
+            "default": {"provider": cfg.provider, "model": cfg.default_model}}
+
+
+@router.get("/catalog")
+async def catalog() -> CatalogResponse:
+    """聊天页选择器要的一切：可选模型、能力、跳板状态。纯读取，不会启动隧道。"""
+    cfg = _load_config()
+    snap = proxy_service.snapshot(cfg)
+    rows: list[CatalogModel] = []
+    for m in cfg.enabled_models:
+        needs_proxy = m.provider in (cfg.proxy_providers or [])
+        ready = model_registry.is_ready(cfg, m.provider)
+        warning = ""
+        if not ready:
+            warning = f"{m.provider} 还没有填 API Key（设置 → AI 提供商）"
+        elif needs_proxy:
+            warning = proxy_service.warning_for(cfg, m.provider)
+        rows.append(CatalogModel(**m.model_dump(), key=f"{m.provider}:{m.model}",
+                                 ready=ready, needs_key=not ready, needs_proxy=needs_proxy,
+                                 proxy_ok=not needs_proxy or snap["listening"], warning=warning))
+    return CatalogResponse(
+        default=ModelPick(provider=cfg.provider, model=cfg.default_model),
+        models=rows, proxy=snap,
+        thinking_levels=[{"value": lv, "label": THINKING_LABELS[lv]} for lv in THINKING_LEVELS],
+    )
 
 
 @router.post("/test")

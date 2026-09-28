@@ -107,6 +107,11 @@
             <div class="input-area">
                 <div id="meta-indicator" class="meta-indicator hidden"></div>
                 <div class="context-tags" id="context-tags"></div>
+                <div class="chat-model-bar" id="chat-model-bar">
+                    <select id="chat-model" class="chat-mini-select" title="本次对话使用的模型" onchange="onChatModelChange()"></select>
+                    <select id="chat-thinking" class="chat-mini-select" title="思考强度" onchange="onChatThinkingChange()"></select>
+                    <span id="chat-proxy-warn" class="chat-proxy-warn hidden" onclick="openConfig()"></span>
+                </div>
                 <div class="input-row">
                     <textarea id="message-input" class="input" placeholder="输入问题… (Enter 发送, Shift+Enter 换行)" rows="1" onkeydown="onInputKeydown(event)" oninput="autoGrow(this)"></textarea>
                     <button class="btn btn-accent btn-send" onclick="sendMessage()" id="btn-send">发送</button>
@@ -206,12 +211,16 @@
                     <div class="form-group"><label>API 地址</label><input type="text" id="anthropic-url" class="input"></div>
                     <p class="text-muted" style="font-size:.75rem;">大陆网络直连返回 403，请在下方开启跳板。</p>
                 </div>
-                <div class="form-group"><label>模型</label>
+                <div class="form-group"><label>模型库（勾选后可在对话页切换，圆点为默认）</label>
                     <div class="model-actions">
-                        <button class="btn btn-secondary btn-sm" onclick="refreshModels()">🔄 刷新模型</button>
+                        <button class="btn btn-secondary btn-sm" onclick="refreshModels(true)">🔄 刷新模型</button>
                         <button class="btn btn-secondary btn-sm" onclick="testConnection()">🔍 测试连接</button>
                     </div>
-                    <select id="model-select" class="input"></select>
+                    <div id="model-catalog" class="model-catalog"></div>
+                    <div class="model-actions" style="margin-top:.4rem;">
+                        <input type="text" id="model-manual" class="input" placeholder="手工添加模型 ID，如 claude-opus-5">
+                        <button class="btn btn-secondary btn-sm" onclick="addManualModel()">添加</button>
+                    </div>
                     <div id="test-result" class="test-result hidden"></div>
                 </div>
                 <div class="form-actions"><button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button></div>
@@ -237,11 +246,13 @@
                     <label style="margin-left:1rem;"><input type="checkbox" class="proxy-provider" value="deepseek"> DeepSeek</label>
                 </div>
                 <div class="model-actions" style="flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="applyProxySettings()">💾 应用跳板设置</button>
                     <button class="btn btn-secondary btn-sm" onclick="proxyAction('start')">▶ 启动隧道</button>
                     <button class="btn btn-secondary btn-sm" onclick="proxyAction('stop')">■ 停止隧道</button>
                     <button class="btn btn-secondary btn-sm" onclick="proxyTest()">🔍 测试可达性</button>
                     <button class="btn btn-secondary btn-sm" onclick="refreshProxyStatus()">🔄 状态</button>
                 </div>
+                <p class="text-muted" style="font-size:.7rem;margin-top:.3rem;">跳板设置与上面的「保存配置」互不影响，保存模型配置不会动隧道。</p>
                 <div id="proxy-result" class="test-result hidden"></div>
                 <div id="proxy-status" class="text-muted" style="font-size:.75rem;margin-top:.3rem;"></div>
                 <hr class="sep">
@@ -264,6 +275,7 @@
     <script src="/js/v2/state.js?v=__V__"></script>
     <script src="/js/v2/layout.js?v=__V__"></script>
     <script src="/js/v2/config.js?v=__V__"></script>
+    <script src="/js/v2/models.js?v=__V__"></script>
     <script src="/js/v2/people.js?v=__V__"></script>
     <script src="/js/v2/sessions.js?v=__V__"></script>
     <script src="/js/v2/chat.js?v=__V__"></script>

@@ -21,6 +21,7 @@ class Message(BaseModel):
     tool_calls: Optional[list[dict]] = None       # assistant messages with tool calls
     tool_call_id: Optional[str] = None            # tool result messages
     name: Optional[str] = None                    # tool name for tool result messages
+    reasoning: Optional[str] = None               # 思考过程（截断保存；老会话没有这个字段）
 
 
 class Session(BaseModel):
@@ -31,6 +32,7 @@ class Session(BaseModel):
     person: Optional[str] = None  # person identifier for chart reading
     model: str = ""
     provider: str = "ollama"
+    thinking: str = ""                 # "" = 用模型自己的默认档
     messages: list[Message] = []
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -52,7 +54,8 @@ class CreateSessionRequest(BaseModel):
     mode: Literal["theory", "chart", "chart_ziwei", "chart_shishen"] = "theory"
     person: Optional[str] = None
     model: str = ""
-    provider: str = "ollama"
+    provider: str = ""                 # 空 = 回退到全局默认（原来是 "ollama"，会把会话钉死）
+    thinking: str = ""
 
 
 class SendMessageRequest(BaseModel):
@@ -62,3 +65,6 @@ class SendMessageRequest(BaseModel):
     person: Optional[str] = None
     selected_context: Optional[dict] = None
     view_context: Optional[dict] = None   # {chart, layer, level, date, selected_palace}
+    model: Optional[str] = None           # 本次选择，同时粘到会话上
+    provider: Optional[str] = None
+    thinking: Optional[str] = None

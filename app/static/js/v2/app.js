@@ -23,6 +23,7 @@ async function boot() {
     AppState.stripsOpen = false;
     restorePanes();
     await loadConfig();
+    await loadCatalog();
     updateModelInfo();
     await loadPeople();
     await loadSessions();
@@ -55,8 +56,15 @@ async function boot() {
 
 function updateModelInfo() {
     const el = document.getElementById('model-info');
-    const c = AppState.config || {};
-    el.textContent = c.default_model ? `${c.provider} · ${c.default_model}` : '未配置模型（点 ⚙️ 设置）';
+    const pick = typeof currentPick === 'function' ? currentPick() : {};
+    if (pick && pick.model) {
+        const entry = typeof catalogEntry === 'function' ? catalogEntry(pick.provider, pick.model) : null;
+        const label = entry ? (entry.label || entry.model) : pick.model;
+        const scope = AppState.sessionId ? '本对话' : '默认';
+        el.textContent = `${scope}：${pick.provider} · ${label}`;
+        return;
+    }
+    el.textContent = '未配置模型（点 ⚙️ 设置）';
 }
 
 window.addEventListener('DOMContentLoaded', boot);

@@ -86,6 +86,15 @@ textarea.input { resize: none; font-family: inherit; }
 .config-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 1.5rem; box-shadow: var(--shadow); }
 .form-actions { margin-top: 1.5rem; display: flex; gap: 0.75rem; }
 .model-actions { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+
+/* 模型库（设置页） */
+.model-catalog { max-height: 16rem; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius); padding: .25rem; }
+.mc-row { display: flex; align-items: center; gap: .4rem; padding: .25rem .35rem; border-radius: var(--radius); cursor: pointer; }
+.mc-row:hover { background: rgba(0,0,0,.04); }
+.mc-name { flex: 1; font-size: .8rem; color: var(--text-primary); word-break: break-all; }
+.mc-tag { font-size: .62rem; padding: 0 .3rem; border-radius: 999px; border: 1px solid var(--border-color); color: var(--text-muted); white-space: nowrap; }
+.mc-tag.warn { border-color: var(--accent-red); color: var(--accent-red); }
+.mc-default { margin-left: .2rem; }
 .test-result { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--radius); font-size: 0.8rem; }
 .test-result.success { background: rgba(4, 120, 87, 0.08); border: 1px solid var(--accent-green); color: var(--accent-green); }
 .test-result.error { background: rgba(185, 28, 28, 0.08); border: 1px solid var(--accent-red); color: var(--accent-red); }

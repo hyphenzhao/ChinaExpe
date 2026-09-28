@@ -55,6 +55,26 @@ def status(cfg: ApiConfig) -> dict:
     }
 
 
+def snapshot(cfg: ApiConfig, timeout: float = 0.3) -> dict:
+    """Cheap read-only view for the chat picker; never starts anything."""
+    host, port = _port_of(cfg.proxy_url)
+    return {"enabled": cfg.proxy_enabled, "listening": port_open(host, port, timeout),
+            "providers": cfg.proxy_providers, "proxy_url": cfg.proxy_url,
+            "ssh": f"{cfg.proxy_ssh_user}@{cfg.proxy_ssh_host}"}
+
+
+def warning_for(cfg: ApiConfig, provider: str, timeout: float = 0.3) -> str:
+    """中文提示：这个提供商要走跳板，但跳板没准备好。空字符串表示没问题。"""
+    if provider not in (cfg.proxy_providers or []):
+        return ""
+    if not cfg.proxy_enabled:
+        return "OpenAI/Anthropic 在大陆通常需要跳板，当前跳板未启用（设置 → 海外 API 跳板）"
+    host, port = _port_of(cfg.proxy_url)
+    if not port_open(host, port, timeout):
+        return "已启用跳板但隧道未监听，可能连不上（设置 → 海外 API 跳板 → 启动隧道）"
+    return ""
+
+
 def start(cfg: ApiConfig, wait: float = 20.0) -> dict:
     """Start the SSH dynamic forward if the port is not already serving."""
     global _proc

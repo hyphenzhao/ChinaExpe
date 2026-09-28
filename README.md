@@ -69,7 +69,9 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 | `GET /api/people/{id}/bazi`，`…/bazi/timeline?date=`，`…/bazi/liunian?dayun=i`，`…/bazi/liuyue?year=` | 八字 |
 | `POST /api/people/{id}/wenmo-compare` | 与文墨导出比对 |
 | `POST /api/people/{id}/export?date=`，`POST /api/people/export-all?date=` | 重写 `data/exports` 导出（运限按 date 或当天） |
-| `GET/POST /api/chats`，`POST /api/chats/{id}/messages`（SSE: token/tool_start/tool_result/done/error） | 对话 |
+| `GET/POST /api/chats`，`PUT /api/chats/{id}`（model/provider/thinking），`POST /api/chats/{id}/messages`（SSE: token/thinking/warning/tool_start/tool_result/done/error） | 对话 |
+| `GET/PUT /api/config/library`，`GET /api/config/catalog` | 模型库与对话页选择器数据（含能力、是否需跳板） |
+| `PUT /api/config/proxy` | 只改跳板设置并立即生效（`PUT /api/config` 不会动跳板） |
 | `POST /api/knowledge/import-literature`，`build-index`，`build-vectors`，`GET status`，`POST query` | 知识库 |
 
 ## 部署（NAS）
@@ -108,6 +110,17 @@ curl -X POST http://192.168.50.6:1248/api/people/export-all   # 按今天重算�
 
 解盘会话在本目录开 Claude Code，使用 `.claude/skills/jiepan`：只读导出 JSON，禁止自行排盘，
 引用典籍必须给文件与行号，结论写入 `data/readings/`。
+
+## 模型库与对话页切换
+
+设置 → 模型库里跨提供商勾选多个模型，圆点标出默认；对话页输入框上方可为**当前会话**切换模型与思考档位，
+选择写回 `data/sessions/<id>.json`。能力由 `app/services/model_registry.py` 按模型 id 推断：
+`deepseek-reasoner` 不下发工具，Claude 与 GPT-5 系可调思考档位，其余默认不发思考参数。
+思考档位翻译为 Anthropic 的 `thinking.budget_tokens` 或 OpenAI 的 `reasoning_effort`，
+被接口拒绝时自动去掉参数重试一次。Anthropic 扩展思考下，`tool_use` 前的思考块会原样回传。
+
+跳板设置与模型配置分开保存：`PUT /api/config` 永远不碰隧道，改跳板请用「应用跳板设置」。
+（此前两者同用一个保存按钮，页面上没勾选的复选框会把正在用的隧道悄悄停掉。）
 
 ## 海外 API 跳板
 

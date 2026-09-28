@@ -461,6 +461,24 @@
     opacity: 0.8;
 }
 
+/* 模型 / 思考档位选择器（放在输入区，不放可拖动的标题栏） */
+.chat-model-bar {
+    display: flex; align-items: center; gap: .35rem; flex-wrap: wrap;
+    margin-bottom: .4rem; font-size: .7rem; color: var(--text-muted);
+}
+.chat-mini-select {
+    max-width: 14rem; padding: .2rem .35rem; font-size: .72rem; font-family: inherit;
+    background: var(--bg-input); color: var(--text-primary);
+    border: 1px solid var(--border-color); border-radius: var(--radius); outline: none;
+}
+.chat-mini-select:hover { border-color: var(--accent-gold); }
+.chat-proxy-warn {
+    padding: .1rem .4rem; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    background: rgba(185, 28, 28, .08); border: 1px solid var(--accent-red); color: var(--accent-red);
+}
+.thinking-event { opacity: .85; }
+.thinking-event .think-body { font-size: .72rem; color: var(--text-secondary); max-height: 14rem; overflow: auto; }
+
 .context-tags {
     display: flex;
     flex-wrap: wrap;
@@ -580,6 +598,9 @@
     #message-input {
         font-size: 16px;
     }
+
+    .chat-model-bar { gap: .25rem; margin-bottom: .3rem; }
+    .chat-mini-select { max-width: 9rem; font-size: 12px; }
 }
 
 /* safe area for mobile notch */

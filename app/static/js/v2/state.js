@@ -18,6 +18,8 @@ const AppState = {
     sessions: [],
     sessionId: null,
     session: null,
+    catalog: null,          // /api/config/catalog：模型库 + 能力 + 跳板状态
+    pendingPick: null,      // 会话还没创建时先记住选的模型/思考档位
     selectedContext: {},
     isStreaming: false,
     abort: null,

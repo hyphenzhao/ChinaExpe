@@ -53,12 +53,20 @@ function appendMessage(role, content, context) {
 function appendToolEvent(data, done) {
     const c = document.getElementById('messages-container');
     const w = document.getElementById('welcome-message'); if (w) w.remove();
-    const names = { search_knowledge: '🔍 检索知识库', get_chart: '📊 读取命盘', get_horoscope: '🕰 读取运限', get_fly: '✈ 宫干飞化', get_bazi: '🀄 读取八字', get_bazi_timeline: '📅 八字运限', propose_person_update: '✎ 修改建议', add_note: '📝 添加备注' };
+    const names = { search_knowledge: '🔍 检索知识库', get_chart: '📊 读取命盘', get_horoscope: '🕰 读取运限', get_fly: '✈ 宫干飞化', get_bazi: '🀄 读取八字', get_bazi_timeline: '📅 八字运限', propose_person_update: '✎ 修改建议', add_note: '📝 添加备注', list_classics: '📚 典籍清单', search_classics: '📖 检索典籍原文', read_classic: '📄 读典籍原文' };
     const div = document.createElement('div');
     div.className = 'tool-event' + (done ? ' done' : '');
     const q = data.query || (data.args && (data.args.date || data.args.palace || data.args.text)) || '';
     div.innerHTML = `<details><summary>${names[data.tool] || esc(data.tool)}${q ? ' · ' + esc(String(q)).slice(0, 60) : ''}${done ? '' : ' …'}</summary><div style="white-space:pre-wrap;margin-top:.25rem;">${esc(data.summary || '')}</div></details>`;
     c.appendChild(div);
+    return div;
+}
+
+/* 思考过程：折叠显示，正文照旧单独渲染 */
+function appendThinking() {
+    const div = document.createElement('div');
+    div.className = 'tool-event thinking-event';
+    div.innerHTML = '<details><summary>💭 思考中…</summary><div class="think-body" style="white-space:pre-wrap;margin-top:.25rem;"></div></details>';
     return div;
 }
 
@@ -177,7 +185,8 @@ async function sendMessage() {
     const input = document.getElementById('message-input');
     const content = input.value.trim();
     if (!content || AppState.isStreaming) return;
-    if (!AppState.config.default_model) { toast('请先在设置中选择模型', true); openConfig(); return; }
+    const pick = currentPick();
+    if (!pick.model) { toast('请先在设置 → 模型库里勾选模型', true); openConfig(); return; }
     const savedCtx = { ...AppState.selectedContext };
     const mode = AppState.personId ? 'chart' : 'theory';
     AppState.isStreaming = true;
@@ -187,8 +196,9 @@ async function sendMessage() {
     if (!AppState.sessionId) {
         try {
             const title = (AppState.personId ? `【${personName(AppState.personId)}】` : '') + content.slice(0, 24) + (content.length > 24 ? '…' : '');
-            const s = await API.post('/api/chats', { title, mode, person: AppState.personId, model: AppState.config.default_model, provider: AppState.config.provider });
-            AppState.sessionId = s.id; AppState.session = s;
+            const s = await API.post('/api/chats', { title, mode, person: AppState.personId, model: pick.model, provider: pick.provider, thinking: pick.thinking || '' });
+            AppState.sessionId = s.id; AppState.session = s; AppState.pendingPick = null;
+            updateModelInfo();
             document.getElementById('session-title').textContent = stripPersonPrefix(title);
         } catch (e) { toast('创建会话失败: ' + e.message, true); AppState.isStreaming = false; document.getElementById('btn-send').disabled = false; return; }
     }
@@ -204,12 +214,12 @@ async function sendMessage() {
     try {
         const resp = await fetch(`/api/chats/${AppState.sessionId}/messages`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
-            body: JSON.stringify({ content, mode, person: AppState.personId, selected_context: Object.keys(savedCtx).length ? savedCtx : null, view_context: viewContext() }),
+            body: JSON.stringify({ content, mode, person: AppState.personId, selected_context: Object.keys(savedCtx).length ? savedCtx : null, view_context: viewContext(), model: pick.model, provider: pick.provider, thinking: pick.thinking || '' }),
         });
         if (!resp.ok) throw new Error(await resp.text());
         reader = resp.body.getReader();
         const dec = new TextDecoder(); let buf = '';
-        let toolDiv = null;
+        let toolDiv = null, thinkDiv = null;
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -218,7 +228,14 @@ async function sendMessage() {
             for (const line of lines) {
                 if (!line.startsWith('data: ')) continue;
                 let d; try { d = JSON.parse(line.slice(6)); } catch (_) { continue; }
-                if (d.type === 'token') { full += d.content; bubble.textContent = full; scrollToBottom(); }
+                if (d.type === 'thinking') {
+                    if (!thinkDiv) { thinkDiv = appendThinking(); div.before(thinkDiv); }
+                    const body = thinkDiv.querySelector('.think-body');
+                    body.textContent += d.content;
+                    scrollToBottom();
+                }
+                else if (d.type === 'warning') { toast(d.message, true); }
+                else if (d.type === 'token') { full += d.content; bubble.textContent = full; scrollToBottom(); }
                 else if (d.type === 'tool_start') { div.before(toolDiv = appendToolEvent(d, false)); scrollToBottom(); }
                 else if (d.type === 'tool_result') {
                     if (toolDiv) { toolDiv.classList.add('done'); toolDiv.querySelector('summary').textContent = toolDiv.querySelector('summary').textContent.replace(' …', ''); toolDiv.querySelector('div').textContent = d.summary || ''; }
@@ -226,7 +243,11 @@ async function sendMessage() {
                     if (d.meta && d.meta.note_added) { AppState.person = null; API.get(`/api/people/${AppState.personId}`).then(p => AppState.person = p).catch(() => {}); }
                     div.remove(); document.getElementById('messages-container').appendChild(div);
                 }
-                else if (d.type === 'done') { gotDone = true; bubble.innerHTML = renderMarkdown(full); if (d.session_title) AppState.session.title = d.session_title; }
+                else if (d.type === 'done') {
+                    gotDone = true; bubble.innerHTML = renderMarkdown(full);
+                    if (d.session_title && AppState.session) AppState.session.title = d.session_title;
+                    if (thinkDiv) thinkDiv.querySelector('summary').textContent = '💭 思考过程';
+                }
                 else if (d.type === 'error') throw new Error(d.message || '服务器错误');
             }
         }

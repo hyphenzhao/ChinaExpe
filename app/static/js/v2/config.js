@@ -26,9 +26,10 @@ async function loadConfigPage() {
     document.getElementById('proxy-ssh-port').value = c.proxy_ssh_port || 22;
     const on = c.proxy_providers || ['openai', 'anthropic'];
     document.querySelectorAll('.proxy-provider').forEach(cb => cb.checked = on.includes(cb.value));
-    document.querySelectorAll('.toggle-btn').forEach(btn => btn.onclick = () => { _configProvider = btn.dataset.provider; updateProviderUI(); refreshModels(); });
+    document.querySelectorAll('.toggle-btn').forEach(btn => btn.onclick = () => { _configProvider = btn.dataset.provider; updateProviderUI(); refreshModels(false); });
     updateProviderUI();
-    refreshModels();
+    await loadLibrary();
+    refreshModels(false);
     refreshIndexInfo();
     refreshProxyStatus();
 }
@@ -41,22 +42,83 @@ function updateProviderUI() {
     });
 }
 
-async function refreshModels() {
-    const select = document.getElementById('model-select');
-    const saved = AppState.config.default_model || '';
-    select.innerHTML = '<option value="">加载中...</option>';
+/* ---------- 模型库 ---------- */
+let _library = [];          // [{provider, model, label, supports_tools, thinking, ...}]
+let _defaultKey = '';       // "provider:model"
+
+function _libKey(p, m) { return `${p}:${m}`; }
+function _inLibrary(p, m) { return _library.some(x => x.provider === p && x.model === m); }
+
+async function loadLibrary() {
     try {
-        const models = await API.get(`/api/config/models?provider=${_configProvider}`);
-        if (!models.length) {
-            select.innerHTML = saved ? `<option value="${esc(saved)}">${esc(saved)}</option>` : '<option value="">无可用模型</option>';
-        } else {
-            select.innerHTML = models.map(m => `<option value="${esc(m.name)}">${esc(m.name)}${m.size ? ' (' + m.size + ')' : ''}</option>`).join('');
-            if (saved && models.some(m => m.name === saved)) select.value = saved;
-            else if (saved) { select.insertAdjacentHTML('afterbegin', `<option value="${esc(saved)}">${esc(saved)}</option>`); select.value = saved; }
-        }
-    } catch (_) {
-        select.innerHTML = saved ? `<option value="${esc(saved)}">${esc(saved)} (离线)</option>` : '<option value="">连接失败</option>';
+        const r = await API.get('/api/config/library');
+        _library = r.models || [];
+        _defaultKey = r.default && r.default.model ? _libKey(r.default.provider, r.default.model) : '';
+    } catch (_) { _library = []; _defaultKey = ''; }
+}
+
+async function refreshModels(force) {
+    const box = document.getElementById('model-catalog');
+    box.innerHTML = '<div class="text-muted" style="font-size:.75rem;">加载中…</div>';
+    let rows = [];
+    try {
+        rows = await API.get(`/api/config/models?provider=${_configProvider}&refresh=${force ? 1 : 0}`);
+    } catch (e) {
+        box.innerHTML = `<div class="text-red" style="font-size:.75rem;">拉取模型列表失败：${esc(e.message)}</div>`;
+        return;
     }
+    // 库里已有但这次没列出来的（手工添加的、离线的）也要显示
+    const extra = _library.filter(m => m.provider === _configProvider && !rows.some(r => r.name === m.model))
+        .map(m => ({ name: m.model, provider: m.provider, manual: true, thinking: m.thinking }));
+    renderCatalog([...rows, ...extra]);
+}
+
+function renderCatalog(rows) {
+    const box = document.getElementById('model-catalog');
+    if (!rows.length) { box.innerHTML = '<div class="text-muted" style="font-size:.75rem;">没有可用模型，填好 API Key 后点「刷新模型」，或手工添加 ID。</div>'; return; }
+    const needsProxy = ['openai', 'anthropic'].includes(_configProvider);
+    box.innerHTML = rows.map(r => {
+        const key = _libKey(r.provider, r.name);
+        const on = _inLibrary(r.provider, r.name);
+        const tags = [
+            r.thinking === 'optional' ? '<span class="mc-tag">可调思考</span>' : '',
+            r.thinking === 'always' ? '<span class="mc-tag">自带思考</span>' : '',
+            r.supports_tools === false ? '<span class="mc-tag warn">不支持工具</span>' : '',
+            needsProxy ? '<span class="mc-tag">需跳板</span>' : '',
+            r.stale ? '<span class="mc-tag warn">离线兜底</span>' : '',
+            r.manual ? '<span class="mc-tag">手工添加</span>' : '',
+        ].join('');
+        return `<label class="mc-row">
+            <input type="checkbox" class="mc-check" data-key="${esc(key)}" data-provider="${esc(r.provider)}" data-model="${esc(r.name)}" ${on ? 'checked' : ''} onchange="toggleLibraryModel(this)">
+            <span class="mc-name">${esc(r.name)}</span>${tags}
+            <input type="radio" name="mc-default" class="mc-default" title="设为默认" ${_defaultKey === key ? 'checked' : ''} onchange="setDefaultModel('${esc(r.provider)}','${esc(r.name)}')">
+        </label>`;
+    }).join('');
+}
+
+function toggleLibraryModel(cb) {
+    const p = cb.dataset.provider, m = cb.dataset.model;
+    if (cb.checked) { if (!_inLibrary(p, m)) _library.push({ provider: p, model: m, label: m }); }
+    else _library = _library.filter(x => !(x.provider === p && x.model === m));
+    if (!_library.length) _defaultKey = '';
+    else if (!_library.some(x => _libKey(x.provider, x.model) === _defaultKey)) _defaultKey = _libKey(_library[0].provider, _library[0].model);
+}
+
+function setDefaultModel(provider, model) {
+    if (!_inLibrary(provider, model)) _library.push({ provider, model, label: model });
+    _defaultKey = _libKey(provider, model);
+    const cb = document.querySelector(`.mc-check[data-key="${CSS.escape(_libKey(provider, model))}"]`);
+    if (cb) cb.checked = true;
+}
+
+function addManualModel() {
+    const el = document.getElementById('model-manual');
+    const id = el.value.trim();
+    if (!id) return;
+    if (!_inLibrary(_configProvider, id)) _library.push({ provider: _configProvider, model: id, label: id });
+    if (!_defaultKey) _defaultKey = _libKey(_configProvider, id);
+    el.value = '';
+    refreshModels(false);
 }
 
 async function testConnection() {
@@ -69,10 +131,7 @@ async function testConnection() {
         const d = await API.post('/api/config/test', body);
         out.classList.add(d.success ? 'success' : 'error');
         out.textContent = (d.success ? '✅ ' : '❌ ') + d.message;
-        if (d.success && d.models && d.models.length) {
-            const select = document.getElementById('model-select');
-            select.innerHTML = d.models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
-        }
+        if (d.success) refreshModels(true);
     } catch (e) { out.classList.add('error'); out.textContent = '❌ ' + e.message; }
 }
 
@@ -87,7 +146,24 @@ async function saveConfig() {
         openai_base_url: document.getElementById('openai-url').value,
         anthropic_api_key: document.getElementById('anthropic-key').value,
         anthropic_base_url: document.getElementById('anthropic-url').value,
-        default_model: document.getElementById('model-select').value,
+    };
+    // 注意：跳板字段不在这里提交，后端也会忽略；改跳板用「应用跳板设置」
+    const pick = _defaultKey ? { provider: _defaultKey.split(':')[0], model: _defaultKey.slice(_defaultKey.indexOf(':') + 1) } : null;
+    if (pick) config.default_model = pick.model;
+    try {
+        await API.put('/api/config', config);
+        const lib = await API.put('/api/config/library', { models: _library, default: pick });
+        _library = lib.models || _library;
+        _defaultKey = lib.default && lib.default.model ? _libKey(lib.default.provider, lib.default.model) : '';
+        AppState.config = { ...AppState.config, ...config, default_model: (lib.default || {}).model || '', provider: (lib.default || {}).provider || config.provider };
+        await loadCatalog();
+        updateModelInfo();
+        toast('配置已保存；' + (lib.message || ''));
+    } catch (e) { toast('保存失败: ' + e.message, true); }
+}
+
+async function applyProxySettings() {
+    const body = {
         proxy_enabled: document.getElementById('proxy-enabled').checked,
         proxy_autostart: document.getElementById('proxy-autostart').checked,
         proxy_url: document.getElementById('proxy-url').value || 'socks5h://127.0.0.1:1080',
@@ -96,13 +172,14 @@ async function saveConfig() {
         proxy_ssh_port: parseInt(document.getElementById('proxy-ssh-port').value) || 22,
         proxy_providers: [...document.querySelectorAll('.proxy-provider')].filter(c => c.checked).map(c => c.value),
     };
+    _proxyOut(true, '正在应用…');
     try {
-        const r = await API.put('/api/config', config);
-        AppState.config = { ...AppState.config, ...config };
-        updateModelInfo();
-        toast('配置已保存' + (r && r.proxy && r.proxy.message ? '；' + r.proxy.message : ''));
-        refreshProxyStatus();
-    } catch (e) { toast('保存失败: ' + e.message, true); }
+        const r = await API.put('/api/config/proxy', body);
+        AppState.config = { ...AppState.config, ...body };
+        _proxyOut(r.proxy ? r.proxy.success !== false : true, (r.message || '') + (r.proxy && r.proxy.message ? '；' + r.proxy.message : ''));
+        await loadCatalog();
+    } catch (e) { _proxyOut(false, e.message); }
+    refreshProxyStatus();
 }
 
 /* ---------- 跳板 ---------- */

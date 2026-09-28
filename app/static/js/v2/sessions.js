@@ -37,8 +37,10 @@ function stripPersonPrefix(t) { return (t || '').replace(/^【[^】]*】/, ''); 
 async function openSession(sid, opts = {}) {
     try { AppState.session = await API.get(`/api/chats/${sid}`); } catch (e) { toast(e.message, true); return; }
     AppState.sessionId = sid;
+    AppState.pendingPick = null;          // 会话自己的模型选择接管
     renderMessages(AppState.session.messages || []);
     document.getElementById('session-title').textContent = stripPersonPrefix(AppState.session.title) || '对话';
+    renderModelBar(); updateModelInfo();
     renderSessions();
     if (!opts.silent && AppState.session.person && AppState.session.person !== AppState.personId) {
         await selectPerson(AppState.session.person, { keepSession: true });
@@ -48,8 +50,9 @@ async function openSession(sid, opts = {}) {
 }
 
 function clearSession() {
-    AppState.sessionId = null; AppState.session = null;
+    AppState.sessionId = null; AppState.session = null; AppState.pendingPick = null;
     renderMessages([]);
+    renderModelBar(); updateModelInfo();
     document.getElementById('session-title').textContent = AppState.personId ? `与 AI 讨论 ${personName(AppState.personId)} 的命盘` : 'AI 解盘';
     renderSessions();
     setHash();

@@ -10,7 +10,8 @@ from ..models.chat import (
     Session, SessionListItem, CreateSessionRequest,
     SendMessageRequest, Message, gen_id,
 )
-from ..models.config import ApiConfig
+from ..models.config import PROVIDERS, THINKING_LEVELS, ApiConfig, ChatOptions
+from ..services import model_registry, proxy_service
 from ..services.llm_service import llm_service
 from ..services.agent_service import agent_service
 from ..services.tools import TOOLS, execute_tool
@@ -102,7 +103,12 @@ async def update_session(session_id: str, updates: dict) -> Session:
     if not session:
         raise HTTPException(status_code=404, detail="会话未找到")
 
-    for key in ["title", "mode", "person", "model", "provider"]:
+    if "provider" in updates and updates["provider"] not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"未知的提供商: {updates['provider']}")
+    if "thinking" in updates and updates["thinking"] not in ("",) + tuple(THINKING_LEVELS):
+        raise HTTPException(status_code=400, detail=f"未知的思考档位: {updates['thinking']}")
+
+    for key in ["title", "mode", "person", "model", "provider", "thinking"]:
         if key in updates:
             setattr(session, key, updates[key])
 
@@ -133,6 +139,13 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
         session.mode = req.mode
     if req.person and req.person != session.person:
         session.person = req.person
+    # 聊天页选的模型与思考档位：本次生效，并粘在会话上
+    if req.provider and req.provider != session.provider:
+        session.provider = req.provider
+    if req.model and req.model != session.model:
+        session.model = req.model
+    if req.thinking and req.thinking != session.thinking:
+        session.thinking = req.thinking
 
     # Add user message and save immediately (so it's not lost if LLM fails)
     user_msg = Message(
@@ -162,16 +175,27 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
     def _sse_event(event: str, data: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
-    # Determine if model supports tool calling (deepseek-reasoner does not)
-    model_name = session.model or config.default_model
-    supports_tools = "reasoner" not in model_name.lower()
+    # 模型与能力全部来自模型库（取代原来对 "reasoner" 的字符串判断）
+    ref = model_registry.resolve(config, session.provider or config.provider,
+                                 session.model or config.default_model)
+    if not ref.model:
+        raise HTTPException(status_code=400, detail="还没有选择模型，请到 设置 → 模型库 里挑一个")
+    model_name, provider_name = ref.model, ref.provider
+    level = model_registry.effective_thinking(ref, session.thinking)
+    supports_tools = ref.supports_tools
+    options = ChatOptions(thinking=level, max_tokens=ref.max_tokens or 8192)
+    proxy_warning = proxy_service.warning_for(config, provider_name)
 
     async def event_generator():
         full_response = ""
+        reasoning_text = ""
         saved = False
         current_messages = list(messages)  # mutable copy for tool loop
         iteration = 0
         MAX_ITERATIONS = 5
+
+        if proxy_warning:                      # 只提示，绝不自动启动隧道
+            yield _sse_event("warning", {"type": "warning", "message": proxy_warning})
 
         try:
             while iteration < MAX_ITERATIONS:
@@ -183,7 +207,7 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                 async for event in llm_service.stream_chat(
                     messages=current_messages,
                     model=model_name,
-                    provider=session.provider or config.provider,
+                    provider=provider_name,
                     ollama_host=config.ollama_host,
                     ollama_port=config.ollama_port,
                     deepseek_api_key=config.deepseek_api_key,
@@ -193,8 +217,13 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                     anthropic_api_key=config.anthropic_api_key,
                     anthropic_base_url=config.anthropic_base_url,
                     tools=stream_tools,
+                    options=options,
                 ):
-                    if event["type"] == "token":
+                    if event["type"] == "thinking":
+                        reasoning_text += event["content"]
+                        yield _sse_event("thinking", {"type": "thinking", "content": event["content"]})
+
+                    elif event["type"] == "token":
                         token = event["content"]
                         full_response += token
                         turn_text += token
@@ -225,6 +254,9 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                             call_msg["content"] = turn_text
                         if event.get("reasoning_content"):
                             call_msg["reasoning_content"] = event["reasoning_content"]
+                        if event.get("thinking_blocks"):
+                            # Anthropic 扩展思考：tool_use 前的思考块必须原样回传
+                            call_msg["thinking_blocks"] = event["thinking_blocks"]
                         current_messages.append(call_msg)
                         turn_text = ""
 
@@ -298,7 +330,8 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                     # No tool_calls — this is the final text response
                     # Save assistant message
                     assistant_msg = Message(
-                        role="assistant", content=full_response
+                        role="assistant", content=full_response,
+                        reasoning=reasoning_text[:4000] or None,
                     )
                     session.messages.append(assistant_msg)
 
@@ -320,13 +353,17 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                             "message_id": assistant_msg.id,
                             "session_title": session.title,
                             "meta": meta,
+                            "model": model_name,
+                            "provider": provider_name,
+                            "thinking": level,
                         },
                     )
                     return
 
             # Max iterations reached
             if full_response:
-                assistant_msg = Message(role="assistant", content=full_response)
+                assistant_msg = Message(role="assistant", content=full_response,
+                                        reasoning=reasoning_text[:4000] or None)
                 session.messages.append(assistant_msg)
                 _save_session(session)
                 saved = True
@@ -337,6 +374,9 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                         "message_id": assistant_msg.id,
                         "session_title": session.title,
                         "meta": meta,
+                        "model": model_name,
+                        "provider": provider_name,
+                        "thinking": level,
                     },
                 )
             else:
