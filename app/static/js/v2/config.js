@@ -207,6 +207,7 @@ async function proxyAction(what) {
         _proxyOut(r.success, r.message);
     } catch (e) { _proxyOut(false, e.message); }
     refreshProxyStatus();
+    loadCatalog();        // 隧道状态变了，对话页那颗跳板提示要跟着变
 }
 
 async function proxyTest() {

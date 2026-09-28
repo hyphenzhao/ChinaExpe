@@ -253,6 +253,8 @@ async function sendMessage() {
         }
     } catch (e) {
         bubble.innerHTML = `<span class="text-red">❌ ${esc(e.name === 'AbortError' ? '已中断' : e.message)}</span>`;
+        // 失败像是网络/跳板问题时刷新一下状态，让输入框上方的提示与现实一致
+        if (/proxy|socks|timeout|连接|超时|403/i.test(e.message || '')) loadCatalog();
     } finally {
         if (reader) { try { await reader.cancel(); } catch (_) {} }
         AppState.abort = null; AppState.isStreaming = false;
