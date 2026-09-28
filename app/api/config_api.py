@@ -133,20 +133,39 @@ async def proxy_stop():
 
 @router.post("/proxy/test")
 async def proxy_test():
-    """Check that the overseas endpoints answer through the tunnel."""
+    """Check the overseas endpoints through the tunnel, whatever the toggle says.
+
+    A 401/403 is a success here: it means the request reached the real API and
+    was only rejected for lack of a key.
+    """
+    import httpx
+
     cfg = _load_config()
     st = proxy_service.status(cfg)
+    via_proxy = st["listening"]
     results = {}
     for name, url in (("openai", f"{cfg.openai_base_url.rstrip('/')}/v1/models"),
                       ("anthropic", f"{cfg.anthropic_base_url.rstrip('/')}/v1/models")):
         try:
-            from ..services.llm_service import _client
-            async with _client(name, timeout=20.0) as client:
+            kwargs = {"timeout": 25.0}
+            if via_proxy:
+                kwargs["proxy"] = cfg.proxy_url
+            async with httpx.AsyncClient(**kwargs) as client:
                 r = await client.get(url)
-            # 401/403 still proves the connection reached the API
             results[name] = {"ok": r.status_code in (200, 401, 403), "status": r.status_code}
         except Exception as e:
-            results[name] = {"ok": False, "error": str(e)[:160]}
+            results[name] = {"ok": False, "error": str(e)[:160] or type(e).__name__}
+    exit_ip = None
+    if via_proxy:
+        try:
+            async with httpx.AsyncClient(timeout=20.0, proxy=cfg.proxy_url) as client:
+                exit_ip = (await client.get("https://api.ipify.org")).text.strip()[:40]
+        except Exception:
+            pass
     reachable = [k for k, v in results.items() if v.get("ok")]
-    return {"success": bool(reachable), "reachable": reachable, "results": results, "proxy": st,
-            "message": (f"可达: {', '.join(reachable)}" if reachable else "两个接口都不可达，检查跳板是否启动、公钥是否已授权")}
+    where = "经跳板" if via_proxy else "直连（隧道未监听）"
+    msg = f"{where} 可达: {', '.join(reachable)}" if reachable else f"{where} 两个接口都不可达"
+    if exit_ip:
+        msg += f"；出口 IP {exit_ip}"
+    return {"success": bool(reachable), "reachable": reachable, "results": results,
+            "proxy": st, "via_proxy": via_proxy, "exit_ip": exit_ip, "message": msg}

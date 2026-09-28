@@ -31,9 +31,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     try:
-        # bring up the 跳板 tunnel if the user left it enabled
+        # bring up the 跳板 tunnel if the user left it enabled; in a thread so a
+        # slow or unreachable jump host never delays serving requests
+        import threading
+
         from .services import config_store, proxy_service
-        proxy_service.ensure(config_store.load())
+        cfg = config_store.load()
+        if cfg.proxy_enabled and cfg.proxy_autostart:
+            threading.Thread(target=proxy_service.ensure, args=(cfg,), daemon=True).start()
     except Exception:
         pass
     yield

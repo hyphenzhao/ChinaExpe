@@ -55,7 +55,7 @@ def status(cfg: ApiConfig) -> dict:
     }
 
 
-def start(cfg: ApiConfig, wait: float = 6.0) -> dict:
+def start(cfg: ApiConfig, wait: float = 20.0) -> dict:
     """Start the SSH dynamic forward if the port is not already serving."""
     global _proc
     host, port = _port_of(cfg.proxy_url)
