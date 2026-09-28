@@ -6,6 +6,7 @@ hand-edited JSON), knowledge comes through the search tool.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from ..engine import calendar as cal
@@ -24,6 +25,17 @@ def _now_context() -> str:
             f"农历：{li.text}；节气干支：{ec.getYear()}年 {ec.getMonth()}月 {ec.getDay()}日")
 
 
+SKILL_FILE = Path(__file__).resolve().parent.parent / "prompts" / "jiepan.md"
+
+
+def _skill_text() -> str:
+    """解盘技能：讲法、铁律、工具分工、回答结构（app/prompts/jiepan.md，可直接编辑）。"""
+    try:
+        return SKILL_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
 _ROLE = """你是「玄学助手」，精通紫微斗数（三合派为主，兼通飞星派宫干四化与钦天四化派的生年四化/自化）与子平八字。
 你的排盘全部由程序引擎按文墨天机默认口径计算（真太阳时、正月初一分年、全书四化表），你**绝不自行推算安星或起大运**，一切盘面数据以工具返回为准。
 
@@ -32,13 +44,14 @@ _ROLE = """你是「玄学助手」，精通紫微斗数（三合派为主，兼
 - get_horoscope：指定日期的大限/小限/流年/流月/流日/流时（各级四化落宫 + 流曜）。问运势必用。
 - get_fly：某宫宫干飞四化与三方四正（飞星派追事件链时用）。
 - get_bazi / get_bazi_timeline：八字命盘与大运流年流月流日链。
-- search_knowledge：典籍与文章检索（全书、续道藏本、梁若瑜飞星问答、渊海子平、紫微麦、解盘方法论）。引用时注明出处与派别。
+- search_knowledge：典籍切片与现代文章的混合检索（全书、续道藏本、梁若瑜飞星问答、渊海子平、紫微麦、解盘方法论）。
+- list_classics / search_classics / read_classic：本机典籍**全文**（另含三命通会、滴天髓阐微、子平真诠评注、神峰通考、星平会海）。要给出可核对的出处时用这三个，引用写 路径:行号。
 - propose_person_update / add_note：用户要求修改出生信息、设置或记录备注时使用。
 
 解盘流程：
 1. 先取盘（get_chart / get_bazi），必要时取运限；2. 明确用哪一派的口径并说明（三合看星曜庙旺与三方四正；飞星看宫干飞化；四化派看生年四化与自化、来因宫）；3. 用 search_knowledge 找典籍/文章依据并引用；4. 落到具体宫位/星曜/时间给结论，吉凶并陈，凶象转译为风险与课题；5. 给出可验证的时间点，欢迎用户反馈以修正。
 
-表达：术语首次出现用现代汉语解释；不要恐吓、不要绝对化；命盘展示的是倾向而非命定；结尾提醒仅供研究与娱乐。
+表达：术语首次出现用现代汉语解释；不要恐吓、不要绝对化；命盘展示的是倾向而非命定。
 """
 
 
@@ -57,6 +70,9 @@ class AgentService:
 
     def _system_prompt(self, mode: str, person: Optional[str], meta: dict) -> str:
         parts = [f"## 当前时间\n{_now_context()}\n", _ROLE]
+        skill = _skill_text()
+        if skill:
+            parts.append(skill)
         people = person_service.list_summaries()
         if people:
             parts.append("## 人物列表\n" + "\n".join(

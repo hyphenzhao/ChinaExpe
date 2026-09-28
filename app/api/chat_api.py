@@ -23,12 +23,8 @@ CONFIG_FILE = _DATA_DIR / "config.json"
 
 
 def _load_config() -> ApiConfig:
-    if CONFIG_FILE.exists():
-        try:
-            return ApiConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
-        except Exception:
-            pass
-    return ApiConfig()
+    from ..services import config_store
+    return config_store.load()
 
 
 def _session_path(session_id: str) -> Path:
@@ -192,6 +188,10 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                     ollama_port=config.ollama_port,
                     deepseek_api_key=config.deepseek_api_key,
                     deepseek_base_url=config.deepseek_base_url,
+                    openai_api_key=config.openai_api_key,
+                    openai_base_url=config.openai_base_url,
+                    anthropic_api_key=config.anthropic_api_key,
+                    anthropic_base_url=config.anthropic_base_url,
                     tools=stream_tools,
                 ):
                     if event["type"] == "token":

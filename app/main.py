@@ -30,7 +30,18 @@ async def lifespan(app: FastAPI):
         export_service.write_all()
     except Exception:
         pass
+    try:
+        # bring up the 跳板 tunnel if the user left it enabled
+        from .services import config_store, proxy_service
+        proxy_service.ensure(config_store.load())
+    except Exception:
+        pass
     yield
+    try:
+        from .services import config_store, proxy_service
+        proxy_service.stop(config_store.load())
+    except Exception:
+        pass
 
 
 app = FastAPI(

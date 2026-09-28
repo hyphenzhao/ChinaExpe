@@ -1,88 +1,93 @@
 """Configuration API routes."""
-import json
-from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from ..models.config import (
-    ApiConfig, ApiConfigResponse, ModelInfo,
+    ApiConfig, ApiConfigResponse,
     TestConnectionRequest, TestConnectionResponse,
 )
+from ..services import config_store, proxy_service
 from ..services.llm_service import llm_service
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
-CONFIG_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "config.json"
+CONFIG_FILE = config_store.CONFIG_FILE          # kept for backwards compatibility
 
 DEEPSEEK_MODELS = [
     {"name": "deepseek-chat", "size": "—", "provider": "deepseek"},
     {"name": "deepseek-reasoner", "size": "—", "provider": "deepseek"},
 ]
+OPENAI_MODELS = [
+    {"name": "gpt-5.5", "size": "—", "provider": "openai"},
+    {"name": "gpt-5-mini", "size": "—", "provider": "openai"},
+]
+ANTHROPIC_MODELS = [
+    {"name": "claude-opus-5", "size": "—", "provider": "anthropic"},
+    {"name": "claude-sonnet-5", "size": "—", "provider": "anthropic"},
+    {"name": "claude-haiku-4-5-20251001", "size": "—", "provider": "anthropic"},
+]
+
+_load_config = config_store.load
+_save_config = config_store.save
 
 
-def _load_config() -> ApiConfig:
-    """Load config from disk or return defaults."""
-    if CONFIG_FILE.exists():
-        try:
-            data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            return ApiConfig(**data)
-        except Exception:
-            pass
-    return ApiConfig()
-
-
-def _save_config(config: ApiConfig):
-    """Persist config to disk."""
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(
-        config.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
+def _keep_masked_keys(new: ApiConfig, old: ApiConfig) -> ApiConfig:
+    """The UI echoes masked keys back; never overwrite a real key with stars."""
+    for field in ("deepseek_api_key", "openai_api_key", "anthropic_api_key"):
+        value = getattr(new, field) or ""
+        if "***" in value or (not value and getattr(old, field)):
+            setattr(new, field, getattr(old, field))
+    return new
 
 
 @router.get("")
 async def get_config() -> ApiConfigResponse:
-    """Get current API configuration (key masked)."""
-    config = _load_config()
-    return ApiConfigResponse.from_config(config)
+    """Get current API configuration (keys masked)."""
+    return ApiConfigResponse.from_config(_load_config())
 
 
 @router.put("")
 async def update_config(config: ApiConfig):
-    """Update API configuration."""
-    # The frontend may echo back the masked key (contains '***').
-    # In that case, preserve the existing real key instead of overwriting it.
-    if "***" in config.deepseek_api_key:
-        existing = _load_config()
-        config.deepseek_api_key = existing.deepseek_api_key
+    """Update API configuration and apply the 跳板 setting."""
+    config = _keep_masked_keys(config, _load_config())
     _save_config(config)
-    return {"success": True, "message": "配置已保存"}
+    proxy = {}
+    try:
+        if config.proxy_enabled:
+            proxy = proxy_service.ensure(config)
+        else:
+            proxy = proxy_service.stop(config)
+    except Exception as e:
+        proxy = {"success": False, "message": f"跳板处理失败: {e}"}
+    return {"success": True, "message": "配置已保存", "proxy": proxy}
 
 
 @router.get("/models")
 async def list_models(provider: str = "ollama") -> list[dict]:
     """List available models for the given provider."""
     config = _load_config()
-    models = []
+    models: list[dict] = []
 
     if provider == "ollama" or not provider:
-        models.extend(await llm_service.list_ollama_models(
-            config.ollama_host, config.ollama_port
-        ))
+        models.extend(await llm_service.list_ollama_models(config.ollama_host, config.ollama_port))
+
+    async def _live(name: str, key: str, base: str, static: list[dict]):
+        if not key:
+            models.extend({**m, "needs_key": True} for m in static)
+            return
+        ok, _msg, names = await llm_service._list_models_http(name, key, base)
+        if ok and names:
+            models.extend({"name": n, "size": "—", "provider": name} for n in names)
+        else:
+            models.extend(static)
+        if config.default_model and config.provider == name and not any(m["name"] == config.default_model for m in models):
+            models.insert(0, {"name": config.default_model, "size": "—", "provider": name})
 
     if provider == "deepseek" or not provider:
-        if config.deepseek_api_key:
-            # live list from the API (includes newer models such as deepseek-v4-*), fallback to the static list
-            ok, _msg, names = await llm_service.test_deepseek_connection(config.deepseek_api_key, config.deepseek_base_url)
-            if ok and names:
-                models.extend({"name": n, "size": "—", "provider": "deepseek"} for n in names)
-            else:
-                models.extend(DEEPSEEK_MODELS)
-            if config.default_model and config.provider == "deepseek" and not any(m["name"] == config.default_model for m in models):
-                models.insert(0, {"name": config.default_model, "size": "—", "provider": "deepseek"})
-        else:
-            # Still show them but mark as needing key
-            for m in DEEPSEEK_MODELS:
-                models.append({**m, "needs_key": True})
+        await _live("deepseek", config.deepseek_api_key, config.deepseek_base_url, DEEPSEEK_MODELS)
+    if provider == "openai":
+        await _live("openai", config.openai_api_key, config.openai_base_url, OPENAI_MODELS)
+    if provider == "anthropic":
+        await _live("anthropic", config.anthropic_api_key, config.anthropic_base_url, ANTHROPIC_MODELS)
 
     return models
 
@@ -90,18 +95,58 @@ async def list_models(provider: str = "ollama") -> list[dict]:
 @router.post("/test")
 async def test_connection(req: TestConnectionRequest) -> TestConnectionResponse:
     """Test connection to the specified provider."""
+    cfg = _load_config()
     if req.provider == "ollama":
-        host = req.host or "http://127.0.0.1"
-        port = req.port or 11434
-        ok, msg, model_names = await llm_service.test_ollama_connection(host, port)
-        return TestConnectionResponse(success=ok, message=msg, models=model_names)
-    elif req.provider == "deepseek":
-        api_key = req.api_key or ""
-        if not api_key or "***" in api_key:
-            # the UI echoes the masked key back; use the stored one
-            api_key = _load_config().deepseek_api_key
-        base_url = req.base_url or "https://api.deepseek.com"
-        ok, msg, model_names = await llm_service.test_deepseek_connection(api_key, base_url)
-        return TestConnectionResponse(success=ok, message=msg, models=model_names)
-    else:
+        ok, msg, names = await llm_service.test_ollama_connection(
+            req.host or cfg.ollama_host, req.port or cfg.ollama_port)
+        return TestConnectionResponse(success=ok, message=msg, models=names)
+
+    stored = {"deepseek": (cfg.deepseek_api_key, cfg.deepseek_base_url),
+              "openai": (cfg.openai_api_key, cfg.openai_base_url),
+              "anthropic": (cfg.anthropic_api_key, cfg.anthropic_base_url)}.get(req.provider)
+    if not stored:
         return TestConnectionResponse(success=False, message=f"未知的提供商: {req.provider}")
+    api_key = req.api_key or ""
+    if not api_key or "***" in api_key:     # the UI echoes the masked key back
+        api_key = stored[0]
+    base_url = req.base_url or stored[1]
+    ok, msg, names = await llm_service._list_models_http(req.provider, api_key, base_url)
+    return TestConnectionResponse(success=ok, message=msg, models=names)
+
+
+# ---------------------------------------------------------------- 跳板 (proxy)
+@router.get("/proxy")
+async def proxy_status():
+    """Is the jump-host tunnel up, and which providers go through it?"""
+    return proxy_service.status(_load_config())
+
+
+@router.post("/proxy/start")
+async def proxy_start():
+    return proxy_service.start(_load_config())
+
+
+@router.post("/proxy/stop")
+async def proxy_stop():
+    return proxy_service.stop(_load_config())
+
+
+@router.post("/proxy/test")
+async def proxy_test():
+    """Check that the overseas endpoints answer through the tunnel."""
+    cfg = _load_config()
+    st = proxy_service.status(cfg)
+    results = {}
+    for name, url in (("openai", f"{cfg.openai_base_url.rstrip('/')}/v1/models"),
+                      ("anthropic", f"{cfg.anthropic_base_url.rstrip('/')}/v1/models")):
+        try:
+            from ..services.llm_service import _client
+            async with _client(name, timeout=20.0) as client:
+                r = await client.get(url)
+            # 401/403 still proves the connection reached the API
+            results[name] = {"ok": r.status_code in (200, 401, 403), "status": r.status_code}
+        except Exception as e:
+            results[name] = {"ok": False, "error": str(e)[:160]}
+    reachable = [k for k, v in results.items() if v.get("ok")]
+    return {"success": bool(reachable), "reachable": reachable, "results": results, "proxy": st,
+            "message": (f"可达: {', '.join(reachable)}" if reachable else "两个接口都不可达，检查跳板是否启动、公钥是否已授权")}

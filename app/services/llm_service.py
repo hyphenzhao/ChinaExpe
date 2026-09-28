@@ -1,6 +1,9 @@
-"""LLM service - abstract streaming for Ollama and DeepSeek APIs.
+"""LLM service - abstract streaming for Ollama, DeepSeek, OpenAI and Anthropic.
 
-Supports both text streaming and tool/function calling (OpenAI-compatible).
+Supports text streaming and tool/function calling.  DeepSeek and OpenAI share
+the OpenAI-compatible wire format; Anthropic's Messages API is converted in
+_stream_anthropic.  Overseas providers can go through the 跳板 (see
+proxy_service): config_store.proxy_for(provider) decides per request.
 """
 
 import json
@@ -8,9 +11,29 @@ from typing import AsyncGenerator, Optional
 
 import httpx
 
+ANTHROPIC_VERSION = "2023-06-01"
+
+
+def _proxy(provider: str) -> Optional[str]:
+    try:
+        from . import config_store
+        return config_store.proxy_for(provider)
+    except Exception:
+        return None
+
+
+def _client(provider: str, timeout: float = 120.0) -> httpx.AsyncClient:
+    """httpx client, routed through the 跳板 when the user enabled it."""
+    proxy = _proxy(provider)
+    try:
+        return httpx.AsyncClient(timeout=timeout, proxy=proxy) if proxy else httpx.AsyncClient(timeout=timeout)
+    except Exception:
+        # socks support missing (needs httpx[socks]) — fall back to a direct connection
+        return httpx.AsyncClient(timeout=timeout)
+
 
 class LLMService:
-    """Unified streaming interface for Ollama and DeepSeek APIs."""
+    """Unified streaming interface for the supported providers."""
 
     async def stream_chat(
         self,
@@ -22,27 +45,31 @@ class LLMService:
         deepseek_api_key: str = "",
         deepseek_base_url: str = "https://api.deepseek.com",
         tools: Optional[list[dict]] = None,
+        openai_api_key: str = "",
+        openai_base_url: str = "https://api.openai.com",
+        anthropic_api_key: str = "",
+        anthropic_base_url: str = "https://api.anthropic.com",
     ) -> AsyncGenerator[dict, None]:
-        """Stream chat completion from the configured provider.
+        """Stream a chat completion from the configured provider.
 
-        Args:
-            messages: List of {'role': ..., 'content': ...} dicts
-            model: Model name
-            provider: 'ollama' or 'deepseek'
-            tools: Optional OpenAI-compatible tool definitions
-
-        Yields:
-            dicts with type: 'token' ({'content': str}) or
-            'tool_calls' ({'calls': [{'id':..., 'function':{...}}]})
+        Yields dicts with type 'token' ({'content': str}) or 'tool_calls'
+        ({'calls': [...], 'reasoning_content': str}).
         """
         if provider == "ollama":
             async for event in self._stream_ollama(
                 messages, model, ollama_host, ollama_port, tools
             ):
                 yield event
-        elif provider == "deepseek":
-            async for event in self._stream_deepseek(
-                messages, model, deepseek_api_key, deepseek_base_url, tools
+        elif provider in ("deepseek", "openai"):
+            key = deepseek_api_key if provider == "deepseek" else openai_api_key
+            base = deepseek_base_url if provider == "deepseek" else openai_base_url
+            async for event in self._stream_openai_compatible(
+                messages, model, key, base, tools, provider
+            ):
+                yield event
+        elif provider == "anthropic":
+            async for event in self._stream_anthropic(
+                messages, model, anthropic_api_key, anthropic_base_url, tools
             ):
                 yield event
         else:
@@ -126,16 +153,19 @@ class LLMService:
         except Exception as e:
             yield {"type": "token", "content": f"[错误] Ollama 请求失败: {str(e)}"}
 
-    async def _stream_deepseek(
+    async def _stream_openai_compatible(
         self,
         messages: list[dict],
         model: str,
         api_key: str,
         base_url: str,
         tools: Optional[list[dict]] = None,
+        provider: str = "deepseek",
     ) -> AsyncGenerator[dict, None]:
-        """Stream from DeepSeek API (OpenAI-compatible) with tool calling support."""
-        url = f"{base_url.rstrip('/')}/v1/chat/completions"
+        """Stream from an OpenAI-compatible API (DeepSeek, OpenAI) with tool calls."""
+        label = "OpenAI" if provider == "openai" else "DeepSeek"
+        base = base_url.rstrip("/")
+        url = base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -145,7 +175,7 @@ class LLMService:
             payload["tools"] = tools
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with _client(provider) as client:
                 async with client.stream(
                     "POST", url, json=payload, headers=headers
                 ) as resp:
@@ -153,7 +183,7 @@ class LLMService:
                         body = await resp.aread()
                         yield {
                             "type": "token",
-                            "content": f"[错误] DeepSeek API 返回 {resp.status_code}: {body.decode()[:200]}",
+                            "content": f"[错误] {label} API 返回 {resp.status_code}: {body.decode()[:200]}",
                         }
                         return
 
@@ -218,12 +248,110 @@ class LLMService:
                                 buf["function"]["arguments"] += func["arguments"]
 
         except httpx.ConnectError:
-            yield {
-                "type": "token",
-                "content": f"[错误] 无法连接到 DeepSeek API ({base_url})",
-            }
+            hint = "；已开启跳板但连不上，检查设置里的跳板状态" if _proxy(provider) else ""
+            yield {"type": "token", "content": f"[错误] 无法连接到 {label} API ({base_url}){hint}"}
         except Exception as e:
-            yield {"type": "token", "content": f"[错误] DeepSeek 请求失败: {str(e)}"}
+            yield {"type": "token", "content": f"[错误] {label} 请求失败: {str(e)}"}
+
+    # ------------------------------------------------------------- anthropic
+    @staticmethod
+    def _to_anthropic(messages: list[dict], tools: Optional[list[dict]]) -> tuple[str, list[dict], list[dict]]:
+        """Convert OpenAI-style messages/tools to the Anthropic Messages format."""
+        system_parts, out = [], []
+        for m in messages:
+            role = m.get("role")
+            if role == "system":
+                system_parts.append(m.get("content") or "")
+                continue
+            if role == "tool":
+                block = {"type": "tool_result", "tool_use_id": m.get("tool_call_id", ""),
+                         "content": m.get("content") or ""}
+                if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                    out[-1]["content"].append(block)
+                else:
+                    out.append({"role": "user", "content": [block]})
+                continue
+            if role == "assistant" and m.get("tool_calls"):
+                blocks = []
+                if m.get("content"):
+                    blocks.append({"type": "text", "text": m["content"]})
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    try:
+                        args = json.loads(fn.get("arguments") or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    blocks.append({"type": "tool_use", "id": tc.get("id", ""),
+                                   "name": fn.get("name", ""), "input": args})
+                out.append({"role": "assistant", "content": blocks})
+                continue
+            if m.get("content"):
+                out.append({"role": role, "content": m["content"]})
+        conv = [{"name": t["function"]["name"],
+                 "description": t["function"].get("description", ""),
+                 "input_schema": t["function"].get("parameters") or {"type": "object", "properties": {}}}
+                for t in (tools or [])]
+        return "\n\n".join(p for p in system_parts if p), out, conv
+
+    async def _stream_anthropic(
+        self,
+        messages: list[dict],
+        model: str,
+        api_key: str,
+        base_url: str,
+        tools: Optional[list[dict]] = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Stream from the Anthropic Messages API, emitting the same events."""
+        system, msgs, atools = self._to_anthropic(messages, tools)
+        base = base_url.rstrip("/")
+        url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
+        headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION,
+                   "content-type": "application/json"}
+        payload: dict = {"model": model, "messages": msgs, "max_tokens": 8192, "stream": True}
+        if system:
+            payload["system"] = system
+        if atools:
+            payload["tools"] = atools
+        try:
+            async with _client("anthropic") as client:
+                async with client.stream("POST", url, json=payload, headers=headers) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        yield {"type": "token",
+                               "content": f"[错误] Anthropic API 返回 {resp.status_code}: {body.decode()[:200]}"}
+                        return
+                    blocks: dict[int, dict] = {}
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            data = json.loads(line[5:].strip())
+                        except json.JSONDecodeError:
+                            continue
+                        etype = data.get("type")
+                        if etype == "content_block_start":
+                            blk = data.get("content_block", {})
+                            blocks[data.get("index", 0)] = {"type": blk.get("type"), "id": blk.get("id", ""),
+                                                            "name": blk.get("name", ""), "json": ""}
+                        elif etype == "content_block_delta":
+                            d = data.get("delta", {})
+                            if d.get("type") == "text_delta" and d.get("text"):
+                                yield {"type": "token", "content": d["text"]}
+                            elif d.get("type") == "input_json_delta":
+                                b = blocks.setdefault(data.get("index", 0), {"type": "tool_use", "id": "", "name": "", "json": ""})
+                                b["json"] += d.get("partial_json", "")
+                        elif etype == "message_stop":
+                            break
+                    calls = [{"id": b["id"], "type": "function",
+                              "function": {"name": b["name"], "arguments": b["json"] or "{}"}}
+                             for _, b in sorted(blocks.items()) if b.get("type") == "tool_use"]
+                    if calls:
+                        yield {"type": "tool_calls", "calls": calls}
+        except httpx.ConnectError:
+            hint = "；已开启跳板但连不上，检查设置里的跳板状态" if _proxy("anthropic") else "；大陆网络通常需要开启跳板"
+            yield {"type": "token", "content": f"[错误] 无法连接到 Anthropic API ({base_url}){hint}"}
+        except Exception as e:
+            yield {"type": "token", "content": f"[错误] Anthropic 请求失败: {str(e)}"}
 
     async def list_ollama_models(
         self, host: str = "http://127.0.0.1", port: int = 11434
@@ -262,19 +390,41 @@ class LLMService:
         self, api_key: str, base_url: str
     ) -> tuple[bool, str, list[str]]:
         """Test connection to DeepSeek API by listing models."""
-        url = f"{base_url.rstrip('/')}/v1/models"
-        headers = {"Authorization": f"Bearer {api_key}"}
+        return await self._list_models_http("deepseek", api_key, base_url)
+
+    async def test_openai_connection(
+        self, api_key: str, base_url: str = "https://api.openai.com"
+    ) -> tuple[bool, str, list[str]]:
+        return await self._list_models_http("openai", api_key, base_url)
+
+    async def test_anthropic_connection(
+        self, api_key: str, base_url: str = "https://api.anthropic.com"
+    ) -> tuple[bool, str, list[str]]:
+        return await self._list_models_http("anthropic", api_key, base_url)
+
+    async def _list_models_http(
+        self, provider: str, api_key: str, base_url: str
+    ) -> tuple[bool, str, list[str]]:
+        """GET /v1/models for the OpenAI-shaped providers (Anthropic included)."""
+        if not api_key:
+            return False, "还没有填 API Key", []
+        base = base_url.rstrip("/")
+        url = base + ("/models" if base.endswith("/v1") else "/v1/models")
+        if provider == "anthropic":
+            headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
+        else:
+            headers = {"Authorization": f"Bearer {api_key}"}
+        via = "（经跳板）" if _proxy(provider) else ""
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with _client(provider, timeout=20.0) as client:
                 resp = await client.get(url, headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    models = [m.get("id", "") for m in data.get("data", [])]
-                    return True, f"连接成功，找到 {len(models)} 个模型", models
-                else:
-                    return False, f"API 返回 {resp.status_code}: {resp.text[:200]}", []
+            if resp.status_code == 200:
+                models = [m.get("id", "") for m in resp.json().get("data", [])]
+                return True, f"连接成功{via}，找到 {len(models)} 个模型", models
+            return False, f"API 返回 {resp.status_code}{via}: {resp.text[:200]}", []
         except Exception as e:
-            return False, f"连接失败: {str(e)}", []
+            hint = "" if _proxy(provider) else "；大陆网络访问 OpenAI/Anthropic 通常要先开跳板" if provider in ("openai", "anthropic") else ""
+            return False, f"连接失败{via}: {str(e)}{hint}", []
 
 
 def _format_size(size_bytes: int) -> str:

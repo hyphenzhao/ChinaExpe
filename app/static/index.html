@@ -185,6 +185,8 @@
                     <div class="toggle-group">
                         <button class="toggle-btn active" data-provider="ollama" id="btn-ollama">Ollama</button>
                         <button class="toggle-btn" data-provider="deepseek" id="btn-deepseek">DeepSeek</button>
+                        <button class="toggle-btn" data-provider="openai" id="btn-openai">OpenAI</button>
+                        <button class="toggle-btn" data-provider="anthropic" id="btn-anthropic">Anthropic</button>
                     </div></div>
                 <div id="ollama-settings">
                     <div class="form-group"><label>主机地址</label><input type="text" id="ollama-host" class="input"></div>
@@ -193,6 +195,16 @@
                 <div id="deepseek-settings" class="hidden">
                     <div class="form-group"><label>API 密钥</label><input type="password" id="deepseek-key" class="input"></div>
                     <div class="form-group"><label>API 地址</label><input type="text" id="deepseek-url" class="input"></div>
+                </div>
+                <div id="openai-settings" class="hidden">
+                    <div class="form-group"><label>API 密钥</label><input type="password" id="openai-key" class="input"></div>
+                    <div class="form-group"><label>API 地址</label><input type="text" id="openai-url" class="input"></div>
+                    <p class="text-muted" style="font-size:.75rem;">大陆网络直连不通，请在下方开启跳板。</p>
+                </div>
+                <div id="anthropic-settings" class="hidden">
+                    <div class="form-group"><label>API 密钥</label><input type="password" id="anthropic-key" class="input"></div>
+                    <div class="form-group"><label>API 地址</label><input type="text" id="anthropic-url" class="input"></div>
+                    <p class="text-muted" style="font-size:.75rem;">大陆网络直连返回 403，请在下方开启跳板。</p>
                 </div>
                 <div class="form-group"><label>模型</label>
                     <div class="model-actions">
@@ -203,6 +215,35 @@
                     <div id="test-result" class="test-result hidden"></div>
                 </div>
                 <div class="form-actions"><button class="btn btn-primary" onclick="saveConfig()">💾 保存配置</button></div>
+                <hr class="sep">
+                <h3 style="margin-bottom:.5rem;">🛫 海外 API 跳板</h3>
+                <p class="text-muted" style="font-size:.75rem;margin-bottom:.4rem;">
+                    通过 SSH 动态转发走跳板机，只影响勾选的提供商；DeepSeek 与 Ollama 始终直连。
+                    不改动跳板机上的 sing-box，只多开一条 SSH 会话。</p>
+                <div class="form-group">
+                    <label><input type="checkbox" id="proxy-enabled"> 启用跳板</label>
+                    <label style="margin-left:1rem;"><input type="checkbox" id="proxy-autostart" checked> 随服务自动启动</label>
+                </div>
+                <div class="form-group"><label>本地 SOCKS5 地址</label><input type="text" id="proxy-url" class="input" placeholder="socks5h://127.0.0.1:1080"></div>
+                <div class="form-group"><label>跳板机</label>
+                    <div class="model-actions">
+                        <input type="text" id="proxy-ssh-user" class="input" style="max-width:8rem;" placeholder="root">
+                        <input type="text" id="proxy-ssh-host" class="input" placeholder="45.77.19.55">
+                        <input type="number" id="proxy-ssh-port" class="input" style="max-width:6rem;" placeholder="22">
+                    </div></div>
+                <div class="form-group"><label>走跳板的提供商</label>
+                    <label><input type="checkbox" class="proxy-provider" value="openai" checked> OpenAI</label>
+                    <label style="margin-left:1rem;"><input type="checkbox" class="proxy-provider" value="anthropic" checked> Anthropic</label>
+                    <label style="margin-left:1rem;"><input type="checkbox" class="proxy-provider" value="deepseek"> DeepSeek</label>
+                </div>
+                <div class="model-actions" style="flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="proxyAction('start')">▶ 启动隧道</button>
+                    <button class="btn btn-secondary btn-sm" onclick="proxyAction('stop')">■ 停止隧道</button>
+                    <button class="btn btn-secondary btn-sm" onclick="proxyTest()">🔍 测试可达性</button>
+                    <button class="btn btn-secondary btn-sm" onclick="refreshProxyStatus()">🔄 状态</button>
+                </div>
+                <div id="proxy-result" class="test-result hidden"></div>
+                <div id="proxy-status" class="text-muted" style="font-size:.75rem;margin-top:.3rem;"></div>
                 <hr class="sep">
                 <h3 style="margin-bottom:.5rem;">📚 知识库</h3>
                 <div class="model-actions" style="flex-wrap:wrap;">

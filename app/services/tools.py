@@ -6,7 +6,10 @@ Tools (all deterministic, engine-backed except search):
   get_fly(person, palace)               某宫宫干飞四化 + 三方四正
   get_bazi(person)                      八字命盘（测测口径）
   get_bazi_timeline(person, date)       八字大运→流年→流月→流日链
-  search_knowledge(query, scope)        知识库（典籍/文章/技能）检索
+  search_knowledge(query, scope)        知识库（典籍切片/文章）混合检索
+  list_classics()                       本机典籍清单（data/classics 全文）
+  search_classics(query, book)          典籍全文正则检索，返回 路径:行号
+  read_classic(path, start, end)        按行号区间读典籍原文
   propose_person_update(person, patch)  修改出生信息/设置（返回待确认 diff，前端确认后才生效）
   add_note(person, text)                给人物追加备注
 """
@@ -53,6 +56,26 @@ TOOLS = [
             "limit": {"type": "integer", "description": "返回条数，默认 5"}},
             "required": ["query"]}}},
     {"type": "function", "function": {
+        "name": "list_classics",
+        "description": "列出本机典籍全文清单（紫微斗数全书、续道藏本、梁若瑜飞星问答、渊海子平、三命通会、滴天髓阐微、子平真诠评注、神峰通考、星平会海等），含路径与行数。不确定有哪些书、该引哪本时先调用。",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "search_classics",
+        "description": "在典籍全文里检索原文（支持正则），返回 路径:行号 与上下文。需要给出可核对的出处、抄录原句时用；与 search_knowledge 的区别是它读的是整本书而不是切片。",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string", "description": "关键词或正则，如 '武曲.{0,6}化忌'、'食神制杀'、'自化忌'"},
+            "book": {"type": "string", "description": "限定某本书，可填书名片段，如 '三命通会'、'梁若瑜'、'全书'；省略则搜全部"},
+            "limit": {"type": "integer", "description": "返回条数，默认 8，最多 40"}},
+            "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "read_classic",
+        "description": "按行号区间读典籍原文，确认上下文、避免断章。路径用 search_classics 或 list_classics 返回的那个。",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "如 data/classics/03-子平/三命通会.md"},
+            "start_line": {"type": "integer", "description": "起始行，从 1 开始"},
+            "end_line": {"type": "integer", "description": "结束行，最多一次读 400 行"}},
+            "required": ["path"]}}},
+    {"type": "function", "function": {
         "name": "propose_person_update",
         "description": "当用户要求修改某人的出生信息（时间/经度/性别/时辰）或排盘设置（流派选项）时调用。不会直接生效，而是生成待确认的修改，由用户在界面点击确认。",
         "parameters": {"type": "object", "properties": {
@@ -85,6 +108,20 @@ async def execute_tool(name: str, arguments: dict) -> dict:
     try:
         if name == "search_knowledge":
             return await _search_knowledge(arguments)
+        if name in ("list_classics", "search_classics", "read_classic"):
+            from . import classics_service as cs
+            if name == "list_classics":
+                return {"content": cs.list_books_text(), "meta": {"books": len(cs.list_books())}}
+            if name == "search_classics":
+                q = (arguments.get("query") or "").strip()
+                if not q:
+                    return {"error": "缺少检索词", "content": "缺少检索词"}
+                hits = cs.search(q, arguments.get("book") or "", int(arguments.get("limit") or 8))
+                return {"content": cs.search_text(q, arguments.get("book") or "", int(arguments.get("limit") or 8)),
+                        "meta": {"hits": len(hits), "query": q}}
+            path = (arguments.get("path") or "").strip()
+            return {"content": cs.read_lines(path, arguments.get("start_line") or 1, arguments.get("end_line")),
+                    "meta": {"path": path}}
         pid = (arguments.get("person") or "").strip()
         if name in ("get_chart", "get_horoscope", "get_fly", "get_bazi", "get_bazi_timeline",
                     "propose_person_update", "add_note"):

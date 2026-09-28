@@ -4,7 +4,7 @@
 
 - **自研排盘引擎**（纯 Python，`app/engine/`）：紫微斗数安星、生年四化/自化/飞化、大限·小限·流年·流月·流日·流时；子平八字四柱十神藏干纳音空亡地势自坐神煞、起运大运流年流月流日。口径按**文墨天机默认**（真太阳时、正月初一分年、全书四化表）与**测测**八字口径，用四份文墨天机导出逐宫逐星做黄金测试（`tests/`）。
 - **命盘为中心的三栏界面**：左栏人物 + 按人物分组的对话；中栏命盘（四化/三合/飞星图层、点宫位看运限、底部大限→流年→流月→流日→流时条）；右栏 AI 对话（可折叠）。
-- **AI 工具化解盘**：AI 通过工具读取引擎输出（`get_chart / get_horoscope / get_fly / get_bazi / get_bazi_timeline`）、检索典籍（`search_knowledge`）、提出修改建议（`propose_person_update`，需用户确认）、记备注（`add_note`）。绝不让 AI 自己排盘。
+- **AI 工具化解盘**：AI 通过工具读取引擎输出（`get_chart / get_horoscope / get_fly / get_bazi / get_bazi_timeline`）、检索典籍切片（`search_knowledge`）、**读典籍全文**（`list_classics / search_classics / read_classic`，返回 `路径:行号` 供核对）、提出修改建议（`propose_person_update`，需用户确认）、记备注（`add_note`）。绝不让 AI 自己排盘。解盘讲法与铁律写在 `app/prompts/jiepan.md`，改这个文件就改了网页端 AI 的工作方式。
 - **知识库**：紫微麦文章 + 导入的典籍（紫微斗数全书、续道藏本、梁若瑜飞星问答、渊海子平、学习笔记、方法论 skills），本地倒排索引 + LanceDB/bge-m3 向量混合检索。
 - **命盘导出**：人物每次保存都会把整张盘写成 `data/exports/<id>.json`（机器读）与 `.md`（人读），供外部 AI 会话直接读取，不必自己排盘。典籍完整原文另存 `data/classics/`，配 `.claude/skills/jiepan` 解盘工作法。
 
@@ -108,6 +108,26 @@ curl -X POST http://192.168.50.6:1248/api/people/export-all   # 按今天重算�
 
 解盘会话在本目录开 Claude Code，使用 `.claude/skills/jiepan`：只读导出 JSON，禁止自行排盘，
 引用典籍必须给文件与行号，结论写入 `data/readings/`。
+
+## 海外 API 跳板
+
+DeepSeek 与 Ollama 直连。NAS 直连 `api.openai.com` 不通、`api.anthropic.com` 返回 403，所以这两家可以走跳板机 `45.77.19.55`：应用以普通用户身份开一条 `ssh -N -D 127.0.0.1:1080`，把 SOCKS5 交给 httpx 用。跳板机上不装任何东西、不改 sshd、不碰 sing-box，只是多一条 SSH 会话。
+
+一次性授权（在跳板机上执行，不需要给本机 sudo）：
+
+```bash
+ssh root@45.77.19.55 'bash -s' < scripts/jumphost_authorize.sh
+```
+
+脚本只往 `~/.ssh/authorized_keys` 追加 NAS 的公钥，并用 `restrict,port-forwarding,command="/bin/false"` 限制这把钥匙只能做端口转发。之后在 设置 → 海外 API 跳板 勾选「启用跳板」，选择哪些提供商走跳板，按「启动隧道」「测试可达性」。开关、自动启动、SOCKS 地址、跳板机账号都存在 `data/config.json`。
+
+| 路径 | 说明 |
+|---|---|
+| `GET /api/config/proxy` | 隧道状态（是否监听、由谁启动、哪些提供商走跳板） |
+| `POST /api/config/proxy/start`，`/stop` | 启停隧道（只管本服务自己起的那条） |
+| `POST /api/config/proxy/test` | 经隧道访问 OpenAI / Anthropic，401/403 也算连通 |
+
+SOCKS 需要 `httpx[socks]`，已列入 requirements。
 
 ## 典籍来源
 
