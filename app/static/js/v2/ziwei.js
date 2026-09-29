@@ -82,12 +82,13 @@ function renderCenter() {
         fly = `<div class="fly-list"><b>${f.from_name}[${f.stem}]</b> 飞：${f.targets.map(t => `<i class="hua ${HUA_CLS[t.hua]}">${t.hua}</i>${t.star}→${t.to_name || '不在盘中'}${t.self ? '(自化)' : t.opposite ? '(对宫)' : ''}`).join(' ')}</div>`;
     }
     const legend = `<div class="zw-legend"><span><i class="hua lu birth">禄</i> 生年</span><span><i class="hua ji self">↓忌</i> 离心自化</span><span><i class="hua quan self">↑权</i> 向心自化</span><span><i class="hua lu lv">限禄</i> 运限四化</span><span>点宫位=三方四正引用入对话 · 点宫名=详情</span></div>`;
-    const info = `<div class="row"><span>公历 <b>${b.solar}</b></span>${b.use_true_solar_time ? `<span>真太阳时 <b>${b.true_solar.slice(11)}</b>（经度 ${b.longitude}）</span>` : ''}</div>
+    const info = `${previewBar()}<div class="row"><span>公历 <b>${b.solar}</b></span>${b.use_true_solar_time ? `<span>真太阳时 <b>${b.true_solar.slice(11)}</b>（经度 ${b.longitude}）</span>` : ''}</div>
         <div class="row"><span>农历 <b>${b.lunar}</b></span></div>
         <div class="pillars">${pil}</div>
         <div class="row"><span><b>${z.bureau}</b></span><span>命主 <b>${z.ming_zhu}</b></span><span>身主 <b>${z.shen_zhu}</b></span><span>子年斗君 <b>${z.zi_dou}</b></span></div>
         <div class="row"><span>身宫 <b>${z.palaces[z.body_index].name}</b></span><span>来因 <b>${z.palaces[z.laiyin_index].name}</b></span><span>大限${z.forward ? '顺' : '逆'}行</span></div>
-        <div class="row"><span>生年四化 ${hua}</span></div>`;
+        <div class="row"><span>生年四化 ${hua}</span></div>
+        ${patternsRow(z.patterns)}`;
     el.innerHTML = `<h3>${esc(p.display_name || '')} <span style="font-size:.75rem;color:var(--text-secondary);font-weight:400;">${b.yinyang_gender}</span></h3>${info}${fly}${level}${legend}`;
 
     // phone: collapsible header bar + small centre cell
@@ -109,6 +110,27 @@ function renderCenter() {
         if (L.daily) parts.push(`<span class="hua lv lvc-daily" style="color:#000">日</span>${L.daily.ganzhi}`);
         mid.innerHTML = `<div class="mid-name">${esc(p.display_name || '')}</div><div>${b.yinyang_gender} · ${z.bureau}</div><div>${b.lunar}</div><div class="mid-lv">${parts.join(' ') || '<span class="text-muted">点下方运限条选择大限/流年</span>'}</div>`;
     }
+}
+
+/* 格局（代码判定成格方向，不判破格） */
+function patternsRow(r) {
+    if (!r) return '';
+    const chips = r.patterns.length
+        ? r.patterns.map((p, i) => `<span class="zw-geju ${p.kind === '凶' ? 'xiong' : 'ji'}" onclick="event.stopPropagation(); showPattern(${i})" title="${esc(p.evidence.join('；'))}">${esc(p.name)}</span>`).join('')
+        : '<span class="text-muted">未见常见格局</span>';
+    return `<div class="row zw-geju-row"><span>格局</span>${chips}</div>`;
+}
+
+function showPattern(i) {
+    const r = AppState.ziwei && AppState.ziwei.patterns; if (!r) return;
+    const p = r.patterns[i]; const c = r.context;
+    const facts = [['煞', c.sha], ['空亡', c.kong], ['生年忌', c.ji], ['离心自化忌', c.self_ji], ['主星落陷', c.xian]]
+        .filter(([, v]) => v.length).map(([k, v]) => `<div><b>${k}</b>：${v.map(esc).join('、')}</div>`).join('') || '<div>未见煞忌空陷</div>';
+    showInfoSheet(`${p.name}（${p.kind}格 · ${p.level}宫）`, `
+        <div class="pd-section"><h4>成格依据</h4>${p.evidence.map(e => `<div>· ${esc(e)}</div>`).join('')}${p.note ? `<div class="text-muted" style="margin-top:.3rem;">注：${esc(p.note)}</div>` : ''}</div>
+        <div class="pd-section"><h4>命宫三方四正与夹宫的事实</h4>${facts}
+            <div class="text-muted" style="font-size:.72rem;margin-top:.3rem;">代码只判成格方向，破格程度请用「紫微斗数格局分析」交给 AI 评估。</div></div>
+        <div class="pd-actions"><button class="btn btn-primary btn-sm" onclick="closeModal('modal-info'); askPatterns('ziwei')">💬 让 AI 评估破格</button></div>`);
 }
 
 function palaceRef(i, role) {

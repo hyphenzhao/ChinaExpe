@@ -19,6 +19,9 @@ const AppState = {
     sessionId: null,
     session: null,
     catalog: null,          // /api/config/catalog：模型库 + 能力 + 跳板状态
+    preview: null,          // 上下调日期时辰的预览 {days, slots, data}
+    savedCharts: null,      // 进入预览前的原盘
+    analysis: null,         // /api/people/{id}/analysis：格局、子平分析、人生喜事
     pendingPick: null,      // 会话还没创建时先记住选的模型/思考档位
     selectedContext: {},
     isStreaming: false,

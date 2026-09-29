@@ -81,6 +81,23 @@
 }
 .zw-center h3 { font-size: 1rem; color: var(--accent-gold); }
 .zw-center .row { display: flex; flex-wrap: wrap; gap: .3rem .9rem; color: var(--text-secondary); }
+.zw-geju-row { gap: .25rem .35rem !important; align-items: center; }
+
+/* 上下调日期时辰 */
+.pv-bar { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .35rem !important; font-size: .74rem; }
+.pv-btn { font-size: .7rem; padding: .1rem .4rem; border: 1px solid var(--border-color); background: var(--bg-card);
+          border-radius: 6px; cursor: pointer; color: var(--text-secondary); font-family: inherit; }
+.pv-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+.pv-label { display: inline-flex; flex-direction: column; line-height: 1.25; }
+.pv-label small { font-size: .64rem; color: var(--text-muted); }
+.pv-bar.active { background: #fffbeb; border: 1px dashed #d97706; border-radius: 8px; padding: .3rem .4rem; }
+.pv-actions { display: inline-flex; gap: .3rem; margin-left: auto; }
+.pv-strip-note { font-size: .74rem; color: #92400e; background: #fffbeb; border: 1px dashed #d97706; border-radius: 8px; padding: .35rem .6rem; }
+.bz-pv { margin-bottom: .4rem; }
+@media (max-width: 700px) { .pv-btn { min-height: 30px; padding: .2rem .5rem; } }
+.zw-geju { font-size: .68rem; padding: 0 .4rem; border-radius: 999px; border: 1px solid; cursor: pointer; white-space: nowrap; }
+.zw-geju.ji { color: #047857; border-color: rgba(4,120,87,.45); background: rgba(4,120,87,.06); }
+.zw-geju.xiong { color: #b91c1c; border-color: rgba(185,28,28,.45); background: rgba(185,28,28,.06); }
 .zw-center b { color: var(--text-primary); font-weight: 600; }
 .zw-center .pillars { display: flex; gap: .6rem; font-size: .95rem; letter-spacing: .05em; }
 .zw-center .pillars span { text-align: center; }

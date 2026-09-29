@@ -107,6 +107,14 @@ async def export_person(pid: str, date: Optional[str] = None):
     return row
 
 
+# ----------------------------------------------------------------- preview
+@router.get("/{pid}/preview")
+async def preview(pid: str, days: int = Query(0, ge=-366, le=366), slots: int = Query(0, ge=-40, le=40)):
+    """前后挪 days 天、slots 个时辰位后的紫微与八字（不落盘）。一天 13 位：早子…亥、晚子。"""
+    _person(pid)
+    return person_service.preview(pid, days, slots)
+
+
 # ------------------------------------------------------------------- ziwei
 @router.get("/{pid}/ziwei")
 async def get_ziwei(pid: str):

@@ -125,6 +125,7 @@ function applyLevelOverlays() {
 /* ---------- strips ---------- */
 async function initHoroscopeStrip() {
     const z = AppState.ziwei; if (!z) return;
+    if (AppState.preview) { renderStrips(); return; }
     // default: today's chain
     if (!AppState.levelData.decadal) await selectToday();
     else renderStrips();
@@ -206,6 +207,7 @@ function askLevel() {
 function renderStrips() {
     const z = AppState.ziwei; const area = document.getElementById('strip-area');
     if (!z || AppState.chart !== 'ziwei') { area.innerHTML = ''; return; }
+    if (AppState.preview) { area.innerHTML = previewStripNote(); return; }
     const nowYear = new Date().getFullYear();
     const L = AppState.level;
     let html = `<div class="strip"><span class="strip-label">大限</span>${z.decadals.map((d, k) => `<span class="chip ${L.decadal === k ? 'active' : ''} ${nowYear >= d.start_year && nowYear <= d.end_year ? 'now' : ''}" onclick="pickDecadal(${k})">${d.ganzhi} ${d.palace_name.replace('宫', '')}<small>${d.start_age}-${d.end_age}岁 ${d.start_year}</small></span>`).join('')}

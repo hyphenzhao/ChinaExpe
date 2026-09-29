@@ -205,7 +205,7 @@ def compute_bazi(birth: BirthInput, settings: Optional[BaziSettings] = None, dt_
     pj_dt = datetime(pj_solar.getYear(), pj_solar.getMonth(), pj_solar.getDay(), pj_solar.getHour(), pj_solar.getMinute())
     delta = dt - pj_dt
     days, rem = delta.days, delta.seconds // 3600
-    return {
+    result = {
         "birth": {"solar": solar.strftime("%Y-%m-%d %H:%M"), "true_solar": true_solar.strftime("%Y-%m-%d %H:%M"),
                   "gender": "男" if birth.is_male else "女", "lunar": lunar.text,
                   "jieqi_note": f"出生于{prev_jie.getName()}（{pj_dt.strftime('%Y-%m-%d %H:%M')}）后 {days} 天 {rem} 小时"},
@@ -219,3 +219,6 @@ def compute_bazi(birth: BirthInput, settings: Optional[BaziSettings] = None, dt_
         "taiyuan": ec.getTaiYuan(), "minggong": ec.getMingGong(), "shengong": ec.getShenGong(),
         "settings": settings.as_dict(),
     }
+    from .analysis import analyze          # local import: analysis imports this module
+    result["analysis"] = analyze(result)
+    return result

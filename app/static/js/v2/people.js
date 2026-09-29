@@ -34,6 +34,7 @@ async function selectPerson(pid, opts = {}) {
     AppState.level = { decadal: null, yearly: null, monthly: null, daily: null, hourly: null };
     AppState.levelData = { decadal: null, yearly: null, monthly: null, daily: null, hourly: null };
     AppState.ziwei = null; AppState.bazi = null; AppState.baziTimeline = null;
+    AppState.preview = null; AppState.savedCharts = null; AppState.analysis = null;
     renderPeople();
     try { AppState.person = await API.get(`/api/people/${pid}`); } catch (e) { toast(e.message, true); return; }
     const t = document.getElementById('person-title');

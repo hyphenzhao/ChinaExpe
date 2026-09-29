@@ -17,6 +17,7 @@ from ..engine.settings import BaziSettings, BirthInput, ZiweiSettings
 from ..engine.ziwei.astrolabe import Astrolabe, compute_astrolabe
 from ..engine.ziwei import horoscope as H
 from ..engine.ziwei import hua as HUA
+from ..engine.ziwei.patterns import detect as detect_patterns
 from ..engine.bazi.chart import compute_bazi
 from ..engine.bazi import timeline as TL
 from ..models.person import Note, Person, PersonCreate, PersonSummary, PersonUpdate
@@ -150,14 +151,36 @@ class PersonService:
         return TL.timeline_for_date(self.birth_input(person), date, self.bazi_settings(pid))
 
     def ziwei_json(self, pid: str) -> dict:
-        person = self.get(pid)
-        astro = self.astrolabe(pid)
+        return self.ziwei_payload(self.astrolabe(pid), self.get(pid))
+
+    @staticmethod
+    def ziwei_payload(astro: Astrolabe, person: Person) -> dict:
         data = astro.as_dict()
         data["person"] = {"id": person.id, "display_name": person.display_name, "gender": person.gender,
                           "notes": [n.model_dump() for n in person.notes]}
         data["decadals"] = H.decadal_list(astro)
         data["fly"] = HUA.fly_all(astro)
+        data["patterns"] = detect_patterns(astro)
         return data
+
+    # ---------------------------------------------------- ad-hoc birth times
+    def charts_for_birth(self, person: Person, birth: BirthInput) -> tuple[Astrolabe, dict]:
+        """任意出生时间排盘（不落盘），沿用该人物的流派设置。"""
+        astro = compute_astrolabe(birth, ZiweiSettings.from_dict(person.settings.ziwei))
+        bazi = compute_bazi(birth, BaziSettings.from_dict(person.settings.bazi))
+        return astro, bazi
+
+    def preview(self, pid: str, days: int = 0, slots: int = 0) -> dict:
+        """前后挪日期/时辰后的盘，用于「上下调」预览。"""
+        from ..engine import timeshift as TS
+        person = self.get(pid)
+        if not person:
+            raise KeyError(pid)
+        birth = TS.shift(self.birth_input(person), days=days, slots=slots)
+        astro, bazi = self.charts_for_birth(person, birth)
+        return {"days": days, "slots": slots, "birth": birth.as_dict(), "label": TS.describe(birth),
+                "original": TS.describe(self.birth_input(person)),
+                "ziwei": self.ziwei_payload(astro, person), "bazi": bazi}
 
     def summary(self, pid: str) -> PersonSummary:
         person = self.get(pid)
@@ -213,6 +236,7 @@ class PersonService:
                          f"主星: {'、'.join(major) or '无'}；辅星: {'、'.join(minor) or '无'}"
                          + (f"；小星: {'、'.join(adj)}" if detail == "full" and adj else "")
                          + f"；长生{p.changsheng} 岁前{p.suiqian} 将前{p.jiangqian} 博士{p.boshi}")
+        lines.append(patterns_text(detect_patterns(a)))
         lines.append("")
         lines.append("## 大限（干支/宫位/年份/大限四化）")
         for d in H.decadal_list(a):
@@ -260,8 +284,11 @@ class PersonService:
         person = self.get(pid)
         c = self.bazi(pid)
         P = c["pillars"]
+        st = (c.get("analysis") or {}).get("strength") or {}
+        strength_txt = (f"{st['label']} {st['same_pct']}%{'（临界）' if st.get('border') else ''}"
+                        f"{'，' + st['special'] if st.get('special') else ''}") if st else c['strength']['label']
         lines = [f"# {person.display_name}（{pid}）八字（子平/测测口径）", c["birth"]["jieqi_note"],
-                 f"四柱: {'｜'.join(p['ganzhi'] for p in P)}；日主 {c['day_master']}；日主强弱初判: {c['strength']['label']}（月令{c['strength']['month_status']}）",
+                 f"四柱: {'｜'.join(p['ganzhi'] for p in P)}；日主 {c['day_master']}；身强弱（代码计算）: {strength_txt}（月令{c['strength']['month_status']}）",
                  "| 柱 | 干神 | 天干 | 地支 | 藏干/支神 | 纳音 | 空亡 | 地势 | 自坐 | 神煞 |", "|---|---|---|---|---|---|---|---|---|---|"]
         for p in P:
             hid = "、".join(f"{h['stem']}({h['shishen']})" for h in p["hidden"])
@@ -269,6 +296,7 @@ class PersonService:
         lines.append("干支关系: " + "；".join(r["text"] for r in c["relations"]["stems"] + c["relations"]["branches"]))
         lines.append("五行状态: " + " ".join(f"{k}{v}" for k, v in c["wuxing_status"].items()))
         lines.append(f"胎元 {c['taiyuan']}，命宫 {c['minggong']}，身宫 {c['shengong']}")
+        lines.append(bazi_analysis_text(c.get("analysis")))
         return "\n".join(lines)
 
     def bazi_timeline_text(self, pid: str, date: datetime) -> str:
@@ -282,6 +310,50 @@ class PersonService:
             hid = "、".join(f"{h['stem']}{h['shishen']}" for h in p["hidden"])
             lines.append(f"- {name} {p['ganzhi']}：干{p['stem_shishen']}；支藏 {hid}；地势{p['dishi']} 自坐{p['zizuo']}；空亡{p['xunkong']}；神煞 {'、'.join(p['shensha']) or '—'}")
         return "\n".join(lines)
+
+
+def patterns_text(r: Optional[dict]) -> str:
+    """紫微格局的文字版：成格方向与事实，未判破格。"""
+    if not r:
+        return ""
+    out = ["", f"## 格局（代码判定成格方向，未判破格，{r['version']}）"]
+    if r["ming"]["borrowed"]:
+        out.append(f"- 命宫无主星，借迁移宫主星：{'、'.join(r['ming']['borrowed_majors']) or '无'}")
+    if not r["patterns"]:
+        out.append("- 未见常见格局")
+    for p in r["patterns"]:
+        out.append(f"- [{p['kind']}] {p['name']}（{p['level']}宫）：{'；'.join(p['evidence'])}"
+                   + (f"。注：{p['note']}" if p.get("note") else ""))
+    c = r["context"]
+    facts = [("煞", c["sha"]), ("空亡", c["kong"]), ("生年忌", c["ji"]), ("离心自化忌", c["self_ji"]), ("主星落陷", c["xian"])]
+    out.append("- 命宫三方四正与夹宫的事实：" + "；".join(f"{k}：{'、'.join(v)}" for k, v in facts if v) if any(v for _, v in facts)
+               else "- 命宫三方四正与夹宫未见煞忌空陷")
+    return "\n".join(out)
+
+
+def bazi_analysis_text(a: Optional[dict]) -> str:
+    """子平量化分析的文字版（代码计算结果，给 AI 当事实用）。"""
+    if not a:
+        return ""
+    st, sh, gj, ys = a["strength"], a["shishen"], a["geju"], a["yongshen"]
+    flags = "、".join(n for n, on in (("得令", st["de_ling"]), ("得地", st["de_di"]), ("得势", st["de_shi"])) if on) or "三者皆无"
+    out = ["", f"## 命局分析（代码计算，{a['version']}）",
+           f"- 身强弱: {st['label']}，同类占比 {st['same_pct']}%{'（临界）' if st['border'] else ''}"
+           f"{'，' + st['special'] if st['special'] else ''}；{flags}；月令系数来源 {st['coef_source']}",
+           "- 五行力量: " + "、".join(f"{e}{p}%" for e, p in st["element_pct"].items()),
+           "- 十神占比: " + "、".join(f"{g['group']}{g['pct']}%" for g in sh["groups"])
+           + "（" + "、".join(f"{r['shishen']}{r['pct']}%" for r in sh["items"]) + "）"]
+    if gj["primary"]:
+        out.append(f"- 取格: {gj['primary']['name']}（{gj['primary']['basis']}"
+                   f"{'；' + gj['primary']['note'] if gj['primary'].get('note') else ''}）")
+    out.append("- 格局候选: " + "、".join(f"{c['name']} {c['pct']}%" for c in gj["candidates"]))
+    if gj["special"]:
+        out.append("- 特殊格候选: " + "、".join(f"{s['name']} {s['pct']}%" for s in gj["special"]))
+    if gj["observations"]:
+        out.append("- 与月令/透干相关的合冲（仅事实，未判破格）: " + "、".join(gj["observations"]))
+    out.append("- 喜忌排序: " + "，".join(f"{r['role']}{r['element']}({r['score']:+})" for r in ys["ranking"])
+               + f"；方法 {ys['method']}")
+    return "\n".join(out)
 
 
 person_service = PersonService()

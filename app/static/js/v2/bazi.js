@@ -32,16 +32,63 @@ function renderBazi() {
         </tbody></table>`;
     const rel = [...c.relations.stems, ...c.relations.branches].map(r => `<span class="${REL_CLS[r.type] || ''}" title="${r.pillars.join('·')}">${esc(r.text)}</span>`).join('') || '<span>无</span>';
     const wxs = Object.entries(c.wuxing_status).map(([k, v]) => `<span>${wx(k, k)} ${v}</span>`).join('');
+    const A = c.analysis;
+    const stLabel = A ? `${A.strength.label} ${A.strength.same_pct}%${A.strength.border ? '（临界）' : ''}` : c.strength.label;
     root.innerHTML = `<div class="bz-wrap">
-        <div class="bz-head"><span>${esc(c.birth.jieqi_note)}</span><span>日主 <b>${c.day_master}</b></span><span>强弱初判 <b>${c.strength.label}</b>（月令${c.strength.month_status}）</span><span>胎元 <b>${c.taiyuan}</b> 命宫 <b>${c.minggong}</b> 身宫 <b>${c.shengong}</b></span></div>
+        <div class="bz-pv">${previewBar()}</div>
+        <div class="bz-head"><span>${esc(c.birth.jieqi_note)}</span><span>日主 <b>${c.day_master}</b></span><span>身强弱 <b>${stLabel}</b>（月令${c.strength.month_status}）</span><span>胎元 <b>${c.taiyuan}</b> 命宫 <b>${c.minggong}</b> 身宫 <b>${c.shengong}</b></span></div>
         ${table}
         <div class="bz-rel">${rel}</div>
         <div class="bz-wx">${wxs}</div>
+        ${renderBaziAnalysis(A)}
         <div id="bz-chain" class="bz-chain"></div>
     </div>`;
 }
 
+/* ---------- 命局分析：身强弱 / 五行 / 十神占比 / 格局候选 / 喜忌用神（纯代码结果） ---------- */
+const WX_OF_GROUP_ROLE = { '用神': 'yong', '喜神': 'xi', '闲神': 'xian', '仇神': 'chou', '忌神': 'ji' };
+
+function _bzaBar(pct, cls) {
+    const w = Math.max(0, Math.min(100, pct || 0));
+    return `<span class="bza-bar"><i class="${cls || ''}" style="width:${w}%"></i></span><span class="bza-num">${(pct || 0).toFixed(1)}%</span>`;
+}
+
+function renderBaziAnalysis(A) {
+    if (!A) return '';
+    const st = A.strength, sh = A.shishen, gj = A.geju, ys = A.yongshen;
+    const flag = (on, t) => `<span class="bza-flag ${on ? 'on' : ''}">${on ? '✓' : '·'} ${t}</span>`;
+    const strength = `<div class="bza-block"><h4>身强身弱</h4>
+        <div class="bza-row"><b>${st.label}</b>${st.special ? `<span class="bza-tag warn">${st.special}</span>` : ''}${st.border ? '<span class="bza-tag">临界</span>' : ''}</div>
+        <div class="bza-row"><span class="bza-k">同类占比</span>${_bzaBar(st.same_pct, 'same')}</div>
+        <div class="bza-row">${flag(st.de_ling, '得令')}${flag(st.de_di, '得地')}${flag(st.de_shi, '得势')}</div>
+        ${Object.entries(st.element_pct).map(([e, p]) => `<div class="bza-row"><span class="bza-k">${wx(e, e)}</span>${_bzaBar(p, 'wxbar-' + e)}</div>`).join('')}
+    </div>`;
+    const shishen = `<div class="bza-block"><h4>十神占比</h4>
+        ${sh.groups.map(g => `<div class="bza-row"><span class="bza-k">${g.group}</span>${_bzaBar(g.pct)}</div>`).join('')}
+        <div class="bza-sub">${sh.items.map(r => `<span>${r.shishen} ${r.pct}%</span>`).join('')}</div>
+    </div>`;
+    const cand = gj.candidates.map(x => `<div class="bza-row" title="${esc(x.basis.join('；') + '；' + x.flags.join('、'))}"><span class="bza-k wide">${x.name}</span>${_bzaBar(x.pct, 'geju')}</div>`).join('');
+    const special = gj.special.length ? `<div class="bza-sub">特殊格候选：${gj.special.map(s => `<span class="bza-tag warn" title="${esc(Object.keys(s.gates).join('、'))}">${s.name} ${s.pct}%</span>`).join('')}</div>` : '';
+    const geju = `<div class="bza-block"><h4>格局候选</h4>
+        ${gj.primary ? `<div class="bza-row"><span class="bza-k">取格</span><b>${gj.primary.name}</b><small class="text-muted">${esc(gj.primary.basis)}${gj.primary.note ? '；' + esc(gj.primary.note) : ''}</small></div>` : ''}
+        ${cand}${special}
+        ${gj.observations.length ? `<div class="bza-sub">相关合冲：${gj.observations.map(esc).join('、')}</div>` : ''}
+    </div>`;
+    const yong = `<div class="bza-block"><h4>喜忌用神</h4>
+        <div class="bza-roles">${ys.ranking.map(r => `<details class="bza-role ${WX_OF_GROUP_ROLE[r.role]}"><summary>${r.role} ${wx(r.element, r.element)}<small>${r.score > 0 ? '+' : ''}${r.score}</small></summary>
+            <div>${r.reasons.map(x => `<div>${x.layer} ${x.delta > 0 ? '+' : ''}${x.delta}：${esc(x.text)}</div>`).join('') || '无加减分'}</div></details>`).join('')}</div>
+        <div class="bza-sub">方法：${esc(ys.method)}</div>
+    </div>`;
+    const open = isMobile() ? '' : 'open';
+    return `<details class="bz-analysis" ${open}><summary>命局分析 <small class="text-muted">（代码计算 · ${A.version}）</small></summary>
+        <div class="bza-grid">${strength}${shishen}${geju}${yong}</div>
+        <div class="bza-foot">口径说明：天干各 100，藏干按本中余气 60/30/10 分配，乘月令系数（本月：${esc(st.coef_source)}）。
+            测测等 App 算法未公开，数值不会逐位一致；格局只列成格方向，不判破格；喜忌排序为本系统口径，仅供参考。</div>
+    </details>`;
+}
+
 async function loadBaziTimeline(dateStr) {
+    if (AppState.preview) { renderBaziStrips(); return; }
     try {
         AppState.baziTimeline = await API.get(`/api/people/${AppState.personId}/bazi/timeline?date=${dateStr}`);
     } catch (e) { toast('运限加载失败: ' + e.message, true); return; }
@@ -51,6 +98,7 @@ async function loadBaziTimeline(dateStr) {
 
 function renderBaziStrips() {
     const t = AppState.baziTimeline; const area = document.getElementById('strip-area');
+    if (AppState.preview && AppState.chart === 'bazi') { area.innerHTML = previewStripNote(); return; }
     if (!t || AppState.chart !== 'bazi') { area.innerHTML = ''; return; }
     const cur = t.date.slice(0, 10);
     const nowY = new Date().getFullYear();

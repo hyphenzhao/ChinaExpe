@@ -22,6 +22,35 @@
 .bz-wx span { padding: .1rem .5rem; border-radius: 6px; background: var(--bg-card); border: 1px solid var(--border-color); }
 
 .bz-chain { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .5rem; }
+
+/* 命局分析（代码计算） */
+.bz-analysis { margin: .6rem 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); padding: .4rem .6rem; }
+.bz-analysis > summary { cursor: pointer; font-weight: 600; font-size: .85rem; }
+.bza-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; margin-top: .5rem; }
+.bza-block h4 { font-size: .78rem; color: var(--accent-gold); margin-bottom: .3rem; }
+.bza-row { display: flex; align-items: center; gap: .4rem; font-size: .75rem; margin: .15rem 0; flex-wrap: wrap; }
+.bza-k { min-width: 2.2rem; color: var(--text-secondary); }
+.bza-k.wide { min-width: 4.6rem; }
+.bza-bar { flex: 1; min-width: 60px; height: 7px; background: #f1f1f3; border-radius: 99px; overflow: hidden; }
+.bza-bar i { display: block; height: 100%; background: #9ca3af; border-radius: 99px; }
+.bza-bar i.same { background: var(--accent-gold); }
+.bza-bar i.geju { background: #6b7280; }
+.bza-bar i.wxbar-木 { background: #15803d; } .bza-bar i.wxbar-火 { background: #dc2626; } .bza-bar i.wxbar-土 { background: #b45309; }
+.bza-bar i.wxbar-金 { background: #4b5563; } .bza-bar i.wxbar-水 { background: #1d4ed8; }
+.bza-num { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.bza-flag { padding: 0 .35rem; border-radius: 99px; border: 1px solid var(--border-color); color: var(--text-muted); }
+.bza-flag.on { border-color: var(--accent-green); color: var(--accent-green); }
+.bza-tag { font-size: .66rem; padding: 0 .35rem; border-radius: 99px; border: 1px solid var(--border-color); color: var(--text-muted); }
+.bza-tag.warn { border-color: var(--accent-red); color: var(--accent-red); }
+.bza-sub { display: flex; flex-wrap: wrap; gap: .3rem .6rem; font-size: .68rem; color: var(--text-muted); margin-top: .25rem; }
+.bza-roles { display: flex; flex-direction: column; gap: .2rem; }
+.bza-role { font-size: .75rem; border-left: 3px solid var(--border-color); padding-left: .4rem; }
+.bza-role summary { cursor: pointer; }
+.bza-role summary small { margin-left: .4rem; color: var(--text-muted); }
+.bza-role > div { font-size: .68rem; color: var(--text-secondary); padding: .2rem 0 .2rem .6rem; }
+.bza-role.yong { border-left-color: #15803d; } .bza-role.xi { border-left-color: #65a30d; }
+.bza-role.chou { border-left-color: #f97316; } .bza-role.ji { border-left-color: #dc2626; }
+.bza-foot { font-size: .64rem; color: var(--text-muted); margin-top: .4rem; line-height: 1.5; }
 .bz-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: .45rem .55rem; font-size: .74rem; display: flex; flex-direction: column; gap: .2rem; }
 .bz-card .lv { font-size: .68rem; color: var(--text-muted); display: flex; justify-content: space-between; }
 .bz-card .gz { font-size: 1.35rem; font-weight: 700; letter-spacing: .1em; }
