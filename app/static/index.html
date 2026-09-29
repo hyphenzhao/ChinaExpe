@@ -170,6 +170,21 @@
             <div class="modal-body" id="modal-info-body"></div>
         </div>
 
+        <!-- 反推时辰问卷 -->
+        <div class="modal hidden sheet" id="modal-rectify">
+            <div class="sheet-handle"></div>
+            <div class="modal-header"><h3>🧭 引导式反推时辰</h3><button class="btn btn-ghost" onclick="closeModal('modal-rectify')">✕</button></div>
+            <div class="modal-body">
+                <p class="text-muted" style="font-size:.75rem;margin-bottom:.5rem;">按经历给候选时辰打分，带年份的经历最有用，至少填两条。答案存在人物档案里，下次可接着补。</p>
+                <div id="rectify-form"></div>
+                <div id="rectify-result"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('modal-rectify')">关闭</button>
+                <button class="btn btn-primary" onclick="runRectify()">保存并评分</button>
+            </div>
+        </div>
+
         <!-- Wenmo compare -->
         <div class="modal hidden" id="modal-compare">
             <div class="modal-header"><h3>与文墨天机导出比对</h3><button class="btn btn-ghost" onclick="closeModal('modal-compare')">✕</button></div>
@@ -282,6 +297,8 @@
     <script src="/js/v2/ziwei-layers.js?v=__V__"></script>
     <script src="/js/v2/bazi.js?v=__V__"></script>
     <script src="/js/v2/preview.js?v=__V__"></script>
+    <script src="/js/v2/welcome.js?v=__V__"></script>
+    <script src="/js/v2/rectify.js?v=__V__"></script>
     <script src="/js/v2/app.js?v=__V__"></script>
 </body>
 </html>

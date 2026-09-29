@@ -304,6 +304,60 @@
     justify-content: center;
 }
 
+/* 欢迎区：格局分析入口 + 人生喜事卡 */
+#welcome-extra { text-align: left; max-width: 560px; margin: 0 auto; }
+.wl-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: .7rem; }
+.wl-card { display: flex; flex-direction: column; gap: .2rem; text-align: left; padding: .6rem .7rem; cursor: pointer;
+           background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; font-family: inherit; color: var(--text-primary); }
+.wl-card:hover { border-color: var(--accent-gold); }
+.wl-card b { font-size: .82rem; }
+.wl-card small { font-size: .7rem; color: var(--text-secondary); line-height: 1.4; }
+.wl-card span { font-size: .66rem; color: var(--accent-gold); }
+.wl-row { display: flex; justify-content: center; margin-top: .6rem; }
+.wl-chip { font-size: .74rem; padding: .3rem .8rem; border-radius: 999px; border: 1px dashed var(--border-color);
+           background: none; cursor: pointer; color: var(--text-secondary); font-family: inherit; }
+.wl-chip:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+
+.xs-card { border: 1px solid var(--border-color); border-radius: 12px; padding: .6rem; background: var(--bg-card); }
+.xs-grid { display: grid; grid-template-columns: 1fr 1.1fr 1fr; grid-template-areas: "a m b" "c m d" "e m f"; gap: .35rem; }
+.xs-tile { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .4rem .2rem; cursor: pointer;
+           border: 1px solid var(--border-color); border-radius: 10px; background: #fafafa; font-family: inherit; color: var(--text-primary); }
+.xs-tile:hover, .xs-tile.open { border-color: var(--accent-gold); background: rgba(180,83,9,.06); }
+.xs-name { font-size: .78rem; font-weight: 600; }
+.xs-year { font-size: .9rem; font-weight: 700; color: var(--accent-gold); display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.xs-year small { font-size: .64rem; font-weight: 400; color: var(--text-secondary); }
+.xs-tile em { font-style: normal; font-size: .6rem; color: var(--text-muted); }
+.xs-center { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; cursor: pointer;
+             border-radius: 50%; aspect-ratio: 1; align-self: center; font-weight: 700; font-size: .9rem; color: #b91c1c;
+             background: radial-gradient(circle, #fff7ed 0%, #fde68a 100%); border: 2px solid #f59e0b; }
+.xs-center small { font-size: .58rem; font-weight: 400; color: #92400e; line-height: 1.3; margin-top: .15rem; }
+.xs-detail { margin-top: .5rem; border-top: 1px dashed var(--border-color); padding-top: .4rem; }
+.xs-dh { font-size: .8rem; font-weight: 600; margin-bottom: .2rem; }
+.xs-sub { font-size: .66rem; color: var(--text-muted); margin: .3rem 0 .15rem; }
+.xs-row { display: grid; grid-template-columns: 3rem 2.6rem 1fr auto; gap: .35rem; align-items: center; font-size: .72rem; margin: .12rem 0; }
+.xs-bar { height: 6px; background: #f1f1f3; border-radius: 99px; overflow: hidden; }
+.xs-bar i { display: block; height: 100%; background: #f59e0b; border-radius: 99px; }
+.xs-note { font-size: .62rem; color: var(--text-muted); margin-top: .4rem; }
+
+/* 反推时辰问卷 */
+.rq-item { margin-bottom: .6rem; }
+.rq-choices { display: flex; flex-wrap: wrap; gap: .3rem; }
+.rq-opt { padding: .3rem .8rem; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-card);
+          cursor: pointer; font-family: inherit; font-size: .8rem; color: var(--text-secondary); }
+.rq-opt.on { background: #111; color: #fff; border-color: #111; }
+.rq-result { margin-top: .6rem; border-top: 1px dashed var(--border-color); padding-top: .5rem; }
+.rq-sum { font-size: .78rem; margin-bottom: .4rem; }
+.rq-table-wrap { overflow-x: auto; }
+.rq-table { width: 100%; border-collapse: collapse; font-size: .74rem; }
+.rq-table th, .rq-table td { padding: .3rem .35rem; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; }
+.rq-table small { color: var(--text-muted); }
+.rq-table tr.rq-cur { background: rgba(180,83,9,.06); }
+@media (max-width: 700px) {
+    .wl-cards { grid-template-columns: 1fr; }
+    .xs-grid { grid-template-columns: 1fr 1fr 1fr; }
+    .xs-center { font-size: .78rem; }
+}
+
 /* ===== Message Bubbles ===== */
 .message {
     display: flex;

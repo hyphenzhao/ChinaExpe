@@ -45,6 +45,10 @@ _ROLE = """你是「玄学助手」，精通紫微斗数（三合派为主，兼
 - get_fly：某宫宫干飞四化与三方四正（飞星派追事件链时用）。
 - get_bazi / get_bazi_timeline：八字命盘与大运流年流月流日链。
 - search_knowledge：典籍切片与现代文章的混合检索（全书、续道藏本、梁若瑜飞星问答、渊海子平、紫微麦、解盘方法论）。
+- get_ziwei_patterns / get_bazi_analysis：代码判定的紫微格局（含煞忌事实）与子平身强弱、十神占比、格局候选、喜忌排序。
+- get_life_events：结婚、发财、高升、搬迁、添丁、高中的强年与月份（代码打分）。
+- get_chart_variant：相邻日期或时辰的候选盘，反推时辰时比对用。
+- get_rectify_candidates / save_life_facts：反推时辰的候选评分表（代码排名）；把用户说出的经历记入档案。
 - list_classics / search_classics / read_classic：本机典籍**全文**（另含三命通会、滴天髓阐微、子平真诠评注、神峰通考、星平会海）。要给出可核对的出处时用这三个，引用写 路径:行号。
 - propose_person_update / add_note：用户要求修改出生信息、设置或记录备注时使用。
 
@@ -55,17 +59,69 @@ _ROLE = """你是「玄学助手」，精通紫微斗数（三合派为主，兼
 """
 
 
+ACTION_TASKS = {
+    "ziwei_geju": ("紫微斗数格局分析",
+                   "请按「破格评估」一节，对上面代码判定的每个格局逐一评估破格程度：先列成格条件，再逐条看三方四正与夹宫的"
+                   "煞、忌、空亡、落陷，以及大限引动，给出「基本成格 / 部分破格 / 严重破格」与大致百分比和理由；"
+                   "格局名单以代码结果为准，不要增删。最后综合说明这个命盘的格局层次。"),
+    "bazi_geju": ("十神格局分析",
+                  "请按「破格评估」一节，基于上面代码给出的身强弱、十神占比、格局候选与喜忌排序，判断主格是否成格、"
+                  "被哪些合冲刑害或十神组合破坏（如伤官见官、财坏印、枭夺食等）、破到什么程度；说明各候选格的取舍，"
+                  "并评论喜忌排序是否合理。身强弱与占比以代码为准，不要重算。"),
+    "life_event": ("人生喜事",
+                   "请按「人生喜事解读」一节，把上面代码给出的年份与月份翻译成具体的生活场景：逐年说明是哪些大限、流年的"
+                   "四化和星曜在引动，可能以什么形式出现，需要注意什么；过去的强年请当作核对问题问我是否应验。"
+                   "这是相对强弱，不是断语。"),
+    "life_events": ("人生喜事总览",
+                    "请按「人生喜事解读」一节，概括六类喜事未来最值得关注的年份与月份，并把往年强年列成核对问题。"),
+}
+
+
+def action_block(action: dict, pid: str) -> str:
+    """预置分析动作：把代码计算结果与任务说明附在用户消息后面。"""
+    kind = action.get("type")
+    if kind not in ACTION_TASKS and kind != "rectify":
+        return ""
+    try:
+        if kind == "ziwei_geju":
+            data = person_service.ziwei_text(pid)
+        elif kind == "bazi_geju":
+            data = person_service.bazi_text(pid)
+        elif kind == "life_event":
+            data = person_service.life_events_text(pid, action.get("event"))
+        elif kind == "life_events":
+            data = person_service.life_events_text(pid)
+        else:
+            from .rectify_service import rectify_text
+            data = rectify_text(pid, action)
+            title, task = "反推时辰", ("请按「反推时辰」一节，读上面的候选时辰评分表，再用 get_chart_variant 查看前两三名"
+                                      "候选的盘，逐条说明哪些事实能区分它们，给出结论、置信度和还需要补问的问题。"
+                                      "排名以代码为准；不要直接改出生时间，确认后用 propose_person_update。")
+            return f"---\n（程序计算结果，视为事实：{title}）\n{data}\n\n（任务）{task}"
+    except Exception as e:  # 计算失败不影响对话本身
+        return f"---\n（程序计算失败：{e}）"
+    title, task = ACTION_TASKS[kind]
+    return f"---\n（程序计算结果，视为事实：{title}）\n{data}\n\n（任务）{task}"
+
+
 class AgentService:
     async def build_messages(self, user_message: str, mode: str, person: Optional[str] = None,
                              selected_context: Optional[dict] = None, history: Optional[list[dict]] = None,
-                             view_context: Optional[dict] = None) -> tuple[list[dict], dict]:
+                             view_context: Optional[dict] = None,
+                             action: Optional[dict] = None) -> tuple[list[dict], dict]:
         meta = {"chart_loaded": False, "person": person}
         system = self._system_prompt(mode, person, meta)
         messages = [{"role": "system", "content": system}]
         for msg in (history or [])[-24:]:
             if msg.get("role") in ("user", "assistant") and msg.get("content"):
                 messages.append({"role": msg["role"], "content": msg["content"]})
-        messages.append({"role": "user", "content": self._user_message(user_message, selected_context, view_context)})
+        content = self._user_message(user_message, selected_context, view_context)
+        if action and person:
+            block = action_block(action, person)
+            if block:
+                content += "\n\n" + block
+                meta["action"] = action.get("type")
+        messages.append({"role": "user", "content": content})
         return messages, meta
 
     def _system_prompt(self, mode: str, person: Optional[str], meta: dict) -> str:

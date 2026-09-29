@@ -49,6 +49,7 @@ class Person(BaseModel):
     settings: PersonSettings = Field(default_factory=PersonSettings)
     notes: list[Note] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    life_facts: dict = Field(default_factory=dict)   # 反推时辰问卷的答案（结婚年、子女、父母、离家等）
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
 
@@ -84,6 +85,7 @@ class PersonUpdate(BaseModel):
     birth: Optional[BirthData] = None
     settings: Optional[PersonSettings] = None
     tags: Optional[list[str]] = None
+    life_facts: Optional[dict] = None
 
 
 class PersonSummary(BaseModel):

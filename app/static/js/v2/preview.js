@@ -9,7 +9,8 @@ function previewBar() {
     const steps = `${btn('◀日', -1, 0, '前一天，时辰不变')}${btn('◀时', 0, -1, '前一个时辰')}`;
     const steps2 = `${btn('时▶', 0, 1, '后一个时辰')}${btn('日▶', 1, 0, '后一天，时辰不变')}`;
     if (!P) {
-        return `<div class="row pv-bar">${steps}<span class="pv-label text-muted">不确定时辰？前后调着看</span>${steps2}</div>`;
+        return `<div class="row pv-bar">${steps}<span class="pv-label text-muted">不确定时辰？前后调着看</span>${steps2}
+            <button class="pv-btn" title="按经历给候选时辰打分" onclick="event.stopPropagation(); openRectify()">🧭 反推</button></div>`;
     }
     const L = P.data.label, O = P.data.original;
     return `<div class="row pv-bar active">${steps}<span class="pv-label"><b>预览 ${esc(L.label)}</b>
@@ -38,6 +39,13 @@ async function previewStep(dDays, dSlots) {
         AppState.ziwei = r.ziwei; AppState.bazi = r.bazi; AppState.baziTimeline = null;
         _previewRerender();
     } catch (e) { toast('预览失败: ' + e.message, true); }
+}
+
+/* 直接跳到相对原盘第 slots 个时辰位（反推时辰结果表用） */
+async function previewGoto(slots) {
+    if (AppState.chart !== 'ziwei') await switchChart('ziwei', true);
+    const cur = AppState.preview || { days: 0, slots: 0 };
+    await previewStep(-cur.days, slots - cur.slots);
 }
 
 function previewReset() {

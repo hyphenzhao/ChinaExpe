@@ -68,3 +68,6 @@ class SendMessageRequest(BaseModel):
     model: Optional[str] = None           # 本次选择，同时粘到会话上
     provider: Optional[str] = None
     thinking: Optional[str] = None
+    # 预置分析动作：服务端把代码计算结果附在消息后交给 AI
+    # {"type": "ziwei_geju"} | {"type": "bazi_geju"} | {"type": "life_event", "event": "结婚"} | {"type": "rectify", ...}
+    action: Optional[dict] = None

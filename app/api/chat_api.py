@@ -148,10 +148,13 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
         session.thinking = req.thinking
 
     # Add user message and save immediately (so it's not lost if LLM fails)
+    ctx = dict(req.selected_context or {})
+    if req.action:
+        ctx["action"] = req.action          # 只存动作本身，计算结果在发送时现算注入
     user_msg = Message(
         role="user",
         content=req.content,
-        context=req.selected_context,
+        context=ctx or None,
     )
     session.messages.append(user_msg)
     _save_session(session)
@@ -170,6 +173,7 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
         selected_context=req.selected_context,
         history=history,
         view_context=req.view_context,
+        action=req.action,
     )
 
     def _sse_event(event: str, data: dict) -> str:
@@ -192,7 +196,7 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
         saved = False
         current_messages = list(messages)  # mutable copy for tool loop
         iteration = 0
-        MAX_ITERATIONS = 5
+        MAX_ITERATIONS = 8                  # 反推时辰要查多张候选盘，5 轮不够
 
         if proxy_warning:                      # 只提示，绝不自动启动隧道
             yield _sse_event("warning", {"type": "warning", "message": proxy_warning})
@@ -316,7 +320,7 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                             session.messages.append(tool_msg)
 
                         # Hint to wrap up after 3 rounds
-                        if iteration >= 3:
+                        if iteration >= 6:
                             current_messages.append(
                                 {
                                     "role": "user",

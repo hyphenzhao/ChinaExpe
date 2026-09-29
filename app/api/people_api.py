@@ -107,6 +107,64 @@ async def export_person(pid: str, date: Optional[str] = None):
     return row
 
 
+# ---------------------------------------------------------------- analyses
+@router.get("/{pid}/analysis")
+async def analysis(pid: str):
+    """紫微格局、子平量化分析、人生喜事（全部代码计算）。"""
+    _person(pid)
+    return person_service.analysis(pid)
+
+
+@router.get("/{pid}/events")
+async def life_events(pid: str, event: Optional[str] = None):
+    _person(pid)
+    res = person_service.life_events(pid)
+    if event:
+        if event not in res["events"]:
+            raise HTTPException(400, f"未知事件: {event}")
+        return {**res, "events": {event: res["events"][event]}}
+    return res
+
+
+# --------------------------------------------------------------- rectify
+class RectifyRequest(BaseModel):
+    approx_time: Optional[str] = None     # "HH:MM" 钟表时间；空则用问卷里的
+    facts: Optional[dict] = None          # 临时覆盖；不传则用人物已保存的 life_facts
+
+
+@router.get("/meta/rectify-questions")
+async def rectify_questions():
+    from ..services.rectify_service import QUESTIONS
+    return QUESTIONS
+
+
+@router.get("/{pid}/facts")
+async def get_facts(pid: str):
+    return _person(pid).life_facts or {}
+
+
+@router.put("/{pid}/facts")
+async def put_facts(pid: str, facts: dict):
+    """合并保存问卷答案（空值会删除该项）。不改动出生信息，不影响排盘。"""
+    p = _person(pid)
+    merged = dict(p.life_facts or {})
+    for k, v in facts.items():
+        if v in (None, "", []):
+            merged.pop(k, None)
+        else:
+            merged[k] = v
+    p.life_facts = merged
+    person_service.save(p)
+    return merged
+
+
+@router.post("/{pid}/rectify")
+async def rectify(pid: str, req: RectifyRequest):
+    from ..services.rectify_service import score_candidates
+    _person(pid)
+    return score_candidates(pid, req.facts, req.approx_time)
+
+
 # ----------------------------------------------------------------- preview
 @router.get("/{pid}/preview")
 async def preview(pid: str, days: int = Query(0, ge=-366, le=366), slots: int = Query(0, ge=-40, le=40)):

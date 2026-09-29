@@ -56,6 +56,43 @@ TOOLS = [
             "limit": {"type": "integer", "description": "返回条数，默认 5"}},
             "required": ["query"]}}},
     {"type": "function", "function": {
+        "name": "get_ziwei_patterns",
+        "description": "紫微格局（代码判定的成格方向，未判破格）以及命宫三方四正与夹宫里的煞、忌、空亡、落陷等事实。做格局或破格分析时先调用。",
+        "parameters": {"type": "object", "properties": {"person": _PERSON_PARAM}, "required": ["person"]}}},
+    {"type": "function", "function": {
+        "name": "get_bazi_analysis",
+        "description": "子平量化分析（代码计算）：身强身弱与同类占比、得令得地得势、五行力量、十神占比、格局候选与百分比、特殊格门槛、喜忌用神排序及理由。",
+        "parameters": {"type": "object", "properties": {"person": _PERSON_PARAM}, "required": ["person"]}}},
+    {"type": "function", "function": {
+        "name": "get_life_events",
+        "description": "人生喜事（代码计算）：结婚、发财、高升、搬迁、添丁、高中六类事件未来最强年份与农历月份、往年强年；指定 event 时附逐条引动证据。",
+        "parameters": {"type": "object", "properties": {
+            "person": _PERSON_PARAM,
+            "event": {"type": "string", "enum": ["结婚", "发财", "高升", "搬迁", "添丁", "高中"], "description": "只看某一类，附证据"}},
+            "required": ["person"]}}},
+    {"type": "function", "function": {
+        "name": "get_chart_variant",
+        "description": "相邻日期或时辰的候选盘（紫微 + 八字文字版，不落盘）。slots 为时辰位偏移，一天 13 位：早子、丑…亥、晚子，跨日自动处理；days 为日期偏移。反推时辰时用来比对候选。",
+        "parameters": {"type": "object", "properties": {
+            "person": _PERSON_PARAM,
+            "slots": {"type": "integer", "description": "时辰位偏移，如 -1 前一个时辰，1 后一个时辰"},
+            "days": {"type": "integer", "description": "日期偏移"}},
+            "required": ["person"]}}},
+    {"type": "function", "function": {
+        "name": "get_rectify_candidates",
+        "description": "反推时辰的候选时辰评分表（代码计算）：按用户已保存的经历（结婚、头胎、离家、父母变故等）给每个候选时辰打分并排序，附证据与置信度。",
+        "parameters": {"type": "object", "properties": {
+            "person": _PERSON_PARAM,
+            "approx_time": {"type": "string", "description": "大致出生时间 HH:MM（钟表时间），有则只比前后各两个时辰"}},
+            "required": ["person"]}}},
+    {"type": "function", "function": {
+        "name": "save_life_facts",
+        "description": "把用户在对话里说出的经历记到人物档案（反推时辰用），如 {\"marriage_year\": 2015, \"children\": 1, \"first_child_sex\": \"男\"}。字段名见问卷；不改出生信息。",
+        "parameters": {"type": "object", "properties": {
+            "person": _PERSON_PARAM,
+            "facts": {"type": "object", "description": "要合并保存的经历字段"}},
+            "required": ["person", "facts"]}}},
+    {"type": "function", "function": {
         "name": "list_classics",
         "description": "列出本机典籍全文清单（紫微斗数全书、续道藏本、梁若瑜飞星问答、渊海子平、三命通会、滴天髓阐微、子平真诠评注、神峰通考、星平会海等），含路径与行数。不确定有哪些书、该引哪本时先调用。",
         "parameters": {"type": "object", "properties": {}}}},
@@ -124,12 +161,34 @@ async def execute_tool(name: str, arguments: dict) -> dict:
                     "meta": {"path": path}}
         pid = (arguments.get("person") or "").strip()
         if name in ("get_chart", "get_horoscope", "get_fly", "get_bazi", "get_bazi_timeline",
-                    "propose_person_update", "add_note"):
+                    "propose_person_update", "add_note", "get_ziwei_patterns", "get_bazi_analysis",
+                    "get_life_events", "get_chart_variant", "get_rectify_candidates", "save_life_facts"):
             if not pid or not ps.get(pid):
                 ids = ps.list_ids()
                 return {"error": f"人物 '{pid}' 不存在。可用人物: {', '.join(ids)}", "content": f"人物 '{pid}' 不存在。可用人物: {', '.join(ids)}"}
         if name == "get_chart":
             return {"content": ps.ziwei_text(pid)}
+        if name == "get_ziwei_patterns":
+            from .person_service import patterns_text, detect_patterns
+            return {"content": patterns_text(detect_patterns(ps.astrolabe(pid)))}
+        if name == "get_bazi_analysis":
+            from .person_service import bazi_analysis_text
+            return {"content": bazi_analysis_text(ps.bazi(pid).get("analysis"))}
+        if name == "get_life_events":
+            return {"content": ps.life_events_text(pid, arguments.get("event") or None)}
+        if name == "get_rectify_candidates":
+            from .rectify_service import rectify_text
+            return {"content": rectify_text(pid, {"approx_time": arguments.get("approx_time")})}
+        if name == "save_life_facts":
+            facts = arguments.get("facts") or {}
+            if isinstance(facts, str):
+                facts = json.loads(facts)
+            person = ps.get(pid)
+            person.life_facts = {**(person.life_facts or {}), **{k: v for k, v in facts.items() if v not in (None, "")}}
+            ps.save(person)
+            return {"content": f"已记录经历：{json.dumps(facts, ensure_ascii=False)}", "meta": {"facts_saved": facts}}
+        if name == "get_chart_variant":
+            return {"content": ps.variant_text(pid, int(arguments.get("days") or 0), int(arguments.get("slots") or 0))}
         if name == "get_horoscope":
             return {"content": ps.horoscope_text(pid, _parse_date(arguments.get("date")))}
         if name == "get_fly":

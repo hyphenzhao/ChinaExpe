@@ -111,6 +111,32 @@ curl -X POST http://192.168.50.6:1248/api/people/export-all   # 按今天重算�
 解盘会话在本目录开 Claude Code，使用 `.claude/skills/jiepan`：只读导出 JSON，禁止自行排盘，
 引用典籍必须给文件与行号，结论写入 `data/readings/`。
 
+## 代码分析：格局、身强弱与喜用、人生喜事、反推时辰
+
+全部由代码计算，不接 AI；需要主观判断的部分（破格程度、事件解读、时辰结论）才交给 AI。
+
+| 模块 | 内容 | 口径与局限 |
+|---|---|---|
+| `engine/bazi/analysis.py` + `tables.py` | 身强身弱（同类占比、得令得地得势、从强从弱门槛）、十神占比、格局候选（子平真诠取格次序 + 相对百分比，另列从格/专旺/化气）、喜忌用神排序（从格→扶抑→调候→通关→病药） | 藏干 60/30/10 权重 + 月令系数；测测等 App 算法未公开，数值不会逐位一致；各层加分为本系统口径 |
+| `engine/ziwei/patterns.py` + `view.py` | 约 50 个吉格、14 个凶格的成格方向，附命宫三方四正与夹宫的煞忌空陷事实 | 按全书与中州/三合通行口径；文墨天机未公开清单；不判破格 |
+| `engine/ziwei/events.py` + `engine/bazi/events.py` | 结婚、发财、高升、搬迁、添丁、高中逐年打分：流年 1.0、大限 0.6、本命 0.3，叠宫 ×1.5，八字流年十神加减不超过三成；未来 20 年取最强 5 年，往年强年另列；按流月挑农历月份 | 权重为本系统口径，只比较同一人不同年份的相对强弱 |
+| `engine/timeshift.py` | 把真太阳时挪到目标时辰中点再反算钟表时间；一天 13 位（早子…亥、晚子），跨日连续 | 不用 `hour_override`，八字与紫微一起变 |
+| `services/rectify_service.py` | 代码定义的问卷；候选时辰（大致时段前后各 2 个，或全天 13 位加前一天晚子）按经历打分：有年份的经历权重 3，离异与父母变故 2，头胎男女 1，兄弟姐妹 0.5 | 文字描述不打分，交给 AI；经历少于两条时置信度低 |
+
+对话欢迎区（选中人物、空对话时）给出「紫微斗数格局分析」「十神格局分析」两张卡、【人生喜事】六宫格卡和「引导式反推」入口。
+点卡片时前端发送 `action`，服务端把对应的代码结果与任务说明附在这条消息后交给 AI（会话里只存短问题）。
+紫微页与八字页顶部有「◀日 ◀时 … 时▶ 日▶」步进器，预览相邻的盘，「应用到此人」才写回出生时间。
+
+| 路径 | 说明 |
+|---|---|
+| `GET /api/people/{id}/analysis` | 格局、子平分析、人生喜事一次返回 |
+| `GET /api/people/{id}/events?event=` | 人生喜事（可只看一类） |
+| `GET /api/people/{id}/preview?days=&slots=` | 相邻日期/时辰的紫微与八字，不落盘 |
+| `GET /api/people/meta/rectify-questions`，`GET/PUT /api/people/{id}/facts`，`POST /api/people/{id}/rectify` | 反推时辰问卷、经历、候选评分 |
+
+AI 新工具：`get_ziwei_patterns`、`get_bazi_analysis`、`get_life_events`、`get_chart_variant`、`get_rectify_candidates`、`save_life_facts`。
+解盘技能 `app/prompts/jiepan.md` 新增「破格评估」「人生喜事解读」「反推时辰」三节。
+
 ## 模型库与对话页切换
 
 设置 → 模型库里跨提供商勾选多个模型，圆点标出默认；对话页输入框上方可为**当前会话**切换模型与思考档位，

@@ -36,6 +36,7 @@ class PersonService:
         self._astro_cache: dict[str, tuple[str, Astrolabe]] = {}
         self._bazi_cache: dict[str, tuple[str, dict]] = {}
         self._save_hooks: list = []          # called after every successful save
+        self._events_cache: dict[str, tuple[str, dict]] = {}
 
     def on_save(self, fn) -> None:
         """Register a callback run after a person is written (see export_service)."""
@@ -64,6 +65,7 @@ class PersonService:
         self._path(person.id).write_text(person.model_dump_json(indent=2), encoding="utf-8")
         self._astro_cache.pop(person.id, None)
         self._bazi_cache.pop(person.id, None)
+        self._events_cache.pop(person.id, None)
         for fn in self._save_hooks:
             try:
                 fn(person)
@@ -163,12 +165,69 @@ class PersonService:
         data["patterns"] = detect_patterns(astro)
         return data
 
+    # ------------------------------------------------------------ analyses
+    def life_events(self, pid: str, now_year: Optional[int] = None) -> dict:
+        from ..engine.ziwei.events import life_events as _life
+        person = self.get(pid)
+        if not person:
+            raise KeyError(pid)
+        now_year = now_year or datetime.now().year
+        key = self._cache_key(person) + f"|{now_year}"
+        hit = self._events_cache.get(pid)
+        if hit and hit[0] == key:
+            return hit[1]
+        res = _life(self.astrolabe(pid), self.bazi(pid), now_year=now_year)
+        self._events_cache[pid] = (key, res)
+        return res
+
+    def analysis(self, pid: str) -> dict:
+        """格局、子平分析、人生喜事一次给齐（对话欢迎区用）。"""
+        return {"patterns": detect_patterns(self.astrolabe(pid)),
+                "bazi": self.bazi(pid).get("analysis"),
+                "life_events": self.life_events(pid)}
+
+    def life_events_text(self, pid: str, event: Optional[str] = None) -> str:
+        res = self.life_events(pid)
+        person = self.get(pid)
+        out = [f"# {person.display_name}（{pid}）人生喜事（代码计算，{res['version']}）",
+               f"说明：{res['note']}。紫微为主，八字流年十神辅助（加减不超过三成）。"]
+        for ev, b in res["events"].items():
+            if event and ev != event:
+                continue
+            out.append(f"\n## {ev}（看{b['palace']}）")
+            if not b["future_top"]:
+                out.append("- 未来 20 年内已不在常见年龄段")
+            for r in b["future_top"]:
+                months = "、".join(f"农历{m['name']}" for m in r["months"])
+                out.append(f"- {r['year']}年（{r['age']}岁）分 {r['score']}（紫微 {r['ziwei']}，八字 {r['bazi_adj']:+}）"
+                           f"，月份倾向：{months}")
+                if event:
+                    for s in r["signals"]:
+                        if s["delta"] or s["text"].startswith("叠宫"):
+                            out.append(f"    · {s['layer']} {s['delta']:+.2f} {s['text']}")
+            if b["past_strong"]:
+                out.append("- 往年强年（可拿来核对）：" + "、".join(f"{r['year']}（{r['age']}岁）" for r in b["past_strong"]))
+        return "\n".join(out)
+
     # ---------------------------------------------------- ad-hoc birth times
     def charts_for_birth(self, person: Person, birth: BirthInput) -> tuple[Astrolabe, dict]:
         """任意出生时间排盘（不落盘），沿用该人物的流派设置。"""
         astro = compute_astrolabe(birth, ZiweiSettings.from_dict(person.settings.ziwei))
         bazi = compute_bazi(birth, BaziSettings.from_dict(person.settings.bazi))
         return astro, bazi
+
+    def variant_text(self, pid: str, days: int = 0, slots: int = 0) -> str:
+        """相邻日期/时辰的紫微 + 八字文字版（反推时辰时给 AI 比对用）。"""
+        from ..engine import timeshift as TS
+        person = self.get(pid)
+        if not person:
+            raise KeyError(pid)
+        birth = TS.shift(self.birth_input(person), days=days, slots=slots)
+        astro, bazi = self.charts_for_birth(person, birth)
+        lab = TS.describe(birth)
+        head = (f"# 候选盘：{lab['label']}（真太阳时 {lab['true_solar']}，钟表 {lab['clock']}；"
+                f"相对原盘 {days:+} 天 {slots:+} 个时辰位）")
+        return "\n".join([head, self.ziwei_text(pid, astro=astro), "", self.bazi_text(pid, chart=bazi)])
 
     def preview(self, pid: str, days: int = 0, slots: int = 0) -> dict:
         """前后挪日期/时辰后的盘，用于「上下调」预览。"""
@@ -204,10 +263,13 @@ class PersonService:
         return out
 
     # ------------------------------------------------------- text for LLM
-    def ziwei_text(self, pid: str, detail: str = "full") -> str:
-        """Compact but complete textual chart for the LLM (生年四化/自化 分开标注)."""
+    def ziwei_text(self, pid: str, detail: str = "full", astro: Optional[Astrolabe] = None) -> str:
+        """Compact but complete textual chart for the LLM (生年四化/自化 分开标注).
+
+        `astro` 可传入候选时辰的盘（反推时辰、上下调预览用），默认用人物已保存的盘。
+        """
         person = self.get(pid)
-        a = self.astrolabe(pid)
+        a = astro or self.astrolabe(pid)
         lines = [f"# {person.display_name}（{pid}）紫微斗数命盘（引擎排盘，文墨天机口径）",
                  f"性别: {'阳' if a.yang_year else '阴'}{person.gender}；钟表时间 {a.solar:%Y-%m-%d %H:%M}"
                  f"{'，真太阳时 ' + a.true_solar.strftime('%H:%M') if a.birth.use_true_solar_time else ''}；农历 {a.lunar.text}",
@@ -280,9 +342,9 @@ class PersonService:
         parts.append("三方四正: " + "、".join(a.palaces[i].name for i in sf["all"]))
         return "\n".join(parts)
 
-    def bazi_text(self, pid: str) -> str:
+    def bazi_text(self, pid: str, chart: Optional[dict] = None) -> str:
         person = self.get(pid)
-        c = self.bazi(pid)
+        c = chart or self.bazi(pid)
         P = c["pillars"]
         st = (c.get("analysis") or {}).get("strength") or {}
         strength_txt = (f"{st['label']} {st['same_pct']}%{'（临界）' if st.get('border') else ''}"

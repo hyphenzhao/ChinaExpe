@@ -27,7 +27,8 @@ function renderMessages(messages) {
     const c = document.getElementById('messages-container');
     c.innerHTML = '';
     if (!messages.length) {
-        c.innerHTML = `<div class="welcome-message" id="welcome-message"><div class="welcome-icon">🔮</div><p>${AppState.personId ? '点选命盘中的宫位/星曜/柱后提问，AI 会自动读取命盘与运限，并检索典籍。' : '先在左侧选择人物。'}</p></div>`;
+        c.innerHTML = `<div class="welcome-message" id="welcome-message"><div class="welcome-icon">🔮</div><p>${AppState.personId ? '点选命盘中的宫位/星曜/柱后提问，AI 会自动读取命盘与运限，并检索典籍。' : '先在左侧选择人物。'}</p><div id="welcome-extra"></div></div>`;
+        if (AppState.personId) renderWelcomeExtra();
         return;
     }
     for (const m of messages) {
@@ -53,7 +54,7 @@ function appendMessage(role, content, context) {
 function appendToolEvent(data, done) {
     const c = document.getElementById('messages-container');
     const w = document.getElementById('welcome-message'); if (w) w.remove();
-    const names = { search_knowledge: '🔍 检索知识库', get_chart: '📊 读取命盘', get_horoscope: '🕰 读取运限', get_fly: '✈ 宫干飞化', get_bazi: '🀄 读取八字', get_bazi_timeline: '📅 八字运限', propose_person_update: '✎ 修改建议', add_note: '📝 添加备注', list_classics: '📚 典籍清单', search_classics: '📖 检索典籍原文', read_classic: '📄 读典籍原文' };
+    const names = { get_ziwei_patterns: '🏯 紫微格局', get_bazi_analysis: '⚖ 子平分析', get_life_events: '🎉 人生喜事', get_chart_variant: '🕰 候选时辰盘', get_rectify_candidates: '🧭 时辰评分', save_life_facts: '📝 记录经历', search_knowledge: '🔍 检索知识库', get_chart: '📊 读取命盘', get_horoscope: '🕰 读取运限', get_fly: '✈ 宫干飞化', get_bazi: '🀄 读取八字', get_bazi_timeline: '📅 八字运限', propose_person_update: '✎ 修改建议', add_note: '📝 添加备注', list_classics: '📚 典籍清单', search_classics: '📖 检索典籍原文', read_classic: '📄 读典籍原文' };
     const div = document.createElement('div');
     div.className = 'tool-event' + (done ? ' done' : '');
     const q = data.query || (data.args && (data.args.date || data.args.palace || data.args.text)) || '';
@@ -175,15 +176,19 @@ function formatContext(ctx) {
     if (ctx.pillar) p.push(`柱:${ctx.pillar}`);
     if (ctx.stem) p.push(`天干:${ctx.stem}`);
     if (ctx.level) p.push(`运限:${ctx.level}`);
+    if (ctx.action) p.push(`附代码分析:${{ ziwei_geju: '紫微格局', bazi_geju: '子平格局', life_event: '人生喜事', life_events: '人生喜事', rectify: '反推时辰' }[ctx.action.type] || ctx.action.type}`);
     return p.join(' · ');
 }
 
 /* ---------- send ---------- */
 function onInputKeydown(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
 
-async function sendMessage() {
+/* opts.content：预置问题（不读输入框）；opts.action：让服务端附上代码分析结果 */
+async function sendMessage(opts = {}) {
     const input = document.getElementById('message-input');
-    const content = input.value.trim();
+    const preset = typeof opts.content === 'string';
+    const content = preset ? opts.content : input.value.trim();
+    const action = opts.action || null;
     if (!content || AppState.isStreaming) return;
     const pick = currentPick();
     if (!pick.model) { toast('请先在设置 → 模型库里勾选模型', true); openConfig(); return; }
@@ -202,8 +207,8 @@ async function sendMessage() {
             document.getElementById('session-title').textContent = stripPersonPrefix(title);
         } catch (e) { toast('创建会话失败: ' + e.message, true); AppState.isStreaming = false; document.getElementById('btn-send').disabled = false; return; }
     }
-    input.value = ''; autoGrow(input);
-    appendMessage('user', content, savedCtx);
+    if (!preset) { input.value = ''; autoGrow(input); }
+    appendMessage('user', content, action ? { ...savedCtx, action } : savedCtx);
     clearContext();
     const div = document.createElement('div'); div.className = 'message assistant streaming';
     div.innerHTML = '<div class="message-avatar">🌙</div><div style="min-width:0;"><div class="message-bubble"></div></div>';
@@ -214,7 +219,7 @@ async function sendMessage() {
     try {
         const resp = await fetch(`/api/chats/${AppState.sessionId}/messages`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: abort.signal,
-            body: JSON.stringify({ content, mode, person: AppState.personId, selected_context: Object.keys(savedCtx).length ? savedCtx : null, view_context: viewContext(), model: pick.model, provider: pick.provider, thinking: pick.thinking || '' }),
+            body: JSON.stringify({ content, mode, person: AppState.personId, selected_context: Object.keys(savedCtx).length ? savedCtx : null, view_context: viewContext(), model: pick.model, provider: pick.provider, thinking: pick.thinking || '', action }),
         });
         if (!resp.ok) throw new Error(await resp.text());
         reader = resp.body.getReader();
