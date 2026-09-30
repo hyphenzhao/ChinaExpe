@@ -227,8 +227,9 @@ def year_table(astro, bazi: Optional[dict], event: str, yblocks: Optional[dict] 
 
 def life_events(astro, bazi: Optional[dict] = None, now_year: Optional[int] = None,
                 events: Optional[list[str]] = None, max_age: int = 85, future_top: int = 5,
-                past_top: int = 8) -> dict:
-    """六类事件的年份评分：未来最强 N 年 + 过去命中的强年，并给出最可能的月份。"""
+                past_top: int = 8, life_top: int = 3) -> dict:
+    """六类事件的年份评分：一生最强 N 年（不分过去未来，主展示），另附未来最强与过去强年，
+    并给出最可能的月份。"""
     from datetime import date
 
     now_year = now_year or date.today().year
@@ -243,8 +244,11 @@ def life_events(astro, bazi: Optional[dict] = None, now_year: Optional[int] = No
             continue
         future = sorted([r for r in rows if now_year <= r["year"] <= now_year + FUTURE_SPAN], key=lambda r: -r["score"])[:future_top]
         past = sorted([r for r in rows if r["year"] < now_year and r["pct"] >= 85], key=lambda r: -r["score"])[:past_top]
-        for r in future + past:
+        top = sorted(rows, key=lambda r: (-r["score"], r["year"]))[:life_top]
+        for r in rows:
+            r["past"] = r["year"] < now_year
+        for r in {id(r): r for r in top + future + past}.values():
             r["months"] = best_months(astro, r["year"], ev, yblocks[r["year"]])
-        out[ev] = {"palace": cfg["label"], "future_top": future, "past_strong": past}
+        out[ev] = {"palace": cfg["label"], "life_top": top, "future_top": future, "past_strong": past}
     return {"version": VERSION, "now_year": now_year, "events": out,
             "note": "权重为本系统口径，只比较同一人不同年份的相对强弱，不是断语；月份为农历月"}

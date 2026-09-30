@@ -47,7 +47,11 @@ def test_life_events_shape(astro, bazi):
         assert len(fut) == 5 and all(r["year"] >= 2026 for r in fut)
         assert [r["score"] for r in fut] == sorted((r["score"] for r in fut), reverse=True)
         assert all(r["year"] < 2026 and r["pct"] >= 85 for r in block["past_strong"])
-        for r in fut + block["past_strong"]:
+        top = block["life_top"]
+        assert len(top) == 3 and [r["score"] for r in top] == sorted((r["score"] for r in top), reverse=True)
+        assert top[0]["score"] >= max(r["score"] for r in fut + block["past_strong"])   # 一生最强不分过去未来
+        assert all(r["past"] == (r["year"] < 2026) for r in top)
+        for r in top + fut + block["past_strong"]:
             assert r["months"] and all(1 <= m["lunar_month"] <= 12 for m in r["months"])
             assert r["age"] >= E.EVENTS[ev]["min_age"]
     json.dumps(res, ensure_ascii=False)

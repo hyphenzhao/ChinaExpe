@@ -63,6 +63,7 @@
                         <button class="tab-btn active" data-chart="ziwei" onclick="switchChart('ziwei')">紫微斗数</button>
                         <button class="tab-btn" data-chart="bazi" onclick="switchChart('bazi')">子平八字</button>
                     </div>
+                    <button class="smart-btn" onclick="openSmart()" title="格局、人生喜事、反推时辰（代码计算，需要时再问 AI）">✨ 智能分析</button>
                     <div class="layer-toggles" id="layer-toggles">
                         <button class="layer-btn active" data-layer="sihua" onclick="toggleLayer('sihua')" title="生年四化 + 自化">四化</button>
                         <button class="layer-btn" data-layer="sanhe" onclick="toggleLayer('sanhe')" title="三方四正">三合</button>
@@ -170,10 +171,17 @@
             <div class="modal-body" id="modal-info-body"></div>
         </div>
 
+        <!-- 智能分析 -->
+        <div class="modal hidden sheet smart-modal" id="modal-smart">
+            <div class="sheet-handle"></div>
+            <div class="modal-header"><h3 id="smart-title">✨ 智能分析</h3><button class="btn btn-ghost" onclick="closeModal('modal-smart')">✕</button></div>
+            <div class="modal-body" id="smart-body"></div>
+        </div>
+
         <!-- 反推时辰问卷 -->
         <div class="modal hidden sheet" id="modal-rectify">
             <div class="sheet-handle"></div>
-            <div class="modal-header"><h3>🧭 引导式反推时辰</h3><button class="btn btn-ghost" onclick="closeModal('modal-rectify')">✕</button></div>
+            <div class="modal-header"><h3><button class="btn btn-ghost btn-sm" onclick="openSmart('rectify')" title="返回智能分析">←</button> 🧭 引导式反推时辰</h3><button class="btn btn-ghost" onclick="closeModal('modal-rectify')">✕</button></div>
             <div class="modal-body">
                 <p class="text-muted" style="font-size:.75rem;margin-bottom:.5rem;">按经历给候选时辰打分，带年份的经历最有用，至少填两条。答案存在人物档案里，下次可接着补。</p>
                 <div id="rectify-form"></div>
@@ -297,7 +305,7 @@
     <script src="/js/v2/ziwei-layers.js?v=__V__"></script>
     <script src="/js/v2/bazi.js?v=__V__"></script>
     <script src="/js/v2/preview.js?v=__V__"></script>
-    <script src="/js/v2/welcome.js?v=__V__"></script>
+    <script src="/js/v2/smart.js?v=__V__"></script>
     <script src="/js/v2/rectify.js?v=__V__"></script>
     <script src="/js/v2/app.js?v=__V__"></script>
 </body>

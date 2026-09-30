@@ -27,8 +27,7 @@ function renderMessages(messages) {
     const c = document.getElementById('messages-container');
     c.innerHTML = '';
     if (!messages.length) {
-        c.innerHTML = `<div class="welcome-message" id="welcome-message"><div class="welcome-icon">🔮</div><p>${AppState.personId ? '点选命盘中的宫位/星曜/柱后提问，AI 会自动读取命盘与运限，并检索典籍。' : '先在左侧选择人物。'}</p><div id="welcome-extra"></div></div>`;
-        if (AppState.personId) renderWelcomeExtra();
+        c.innerHTML = `<div class="welcome-message" id="welcome-message"><div class="welcome-icon">🔮</div><p>${AppState.personId ? '点选命盘中的宫位/星曜/柱后提问，AI 会自动读取命盘与运限，并检索典籍。<br>格局、人生喜事与反推时辰在命盘上方的「✨ 智能分析」里。' : '先在左侧选择人物。'}</p></div>`;
         return;
     }
     for (const m of messages) {

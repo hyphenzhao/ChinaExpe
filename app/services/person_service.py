@@ -195,6 +195,10 @@ class PersonService:
             if event and ev != event:
                 continue
             out.append(f"\n## {ev}（看{b['palace']}）")
+            out.append("- 一生最强：" + "、".join(
+                f"{r['year']}（{r['age']}岁，{'已过' if r['past'] else '未到'}，分 {r['score']}，"
+                f"月份倾向 {'、'.join('农历' + m['name'] for m in r['months'])}）" for r in b["life_top"]))
+            out.append("- 未来 20 年最强：")
             if not b["future_top"]:
                 out.append("- 未来 20 年内已不在常见年龄段")
             for r in b["future_top"]:
