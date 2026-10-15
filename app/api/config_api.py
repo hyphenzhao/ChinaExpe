@@ -1,4 +1,5 @@
 """Configuration API routes."""
+import json
 import time
 
 from fastapi import APIRouter, HTTPException
@@ -8,7 +9,7 @@ from ..models.config import (
     ApiConfig, ApiConfigResponse, CatalogModel, CatalogResponse, LibraryUpdate, ModelPick,
     TestConnectionRequest, TestConnectionResponse,
 )
-from ..services import config_store, model_registry, proxy_service
+from ..services import config_store, model_registry, model_capabilities, proxy_service, singbox_service
 from ..services.llm_service import llm_service
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -61,7 +62,7 @@ async def get_config() -> ApiConfigResponse:
 
 
 PROXY_FIELDS = ("proxy_enabled", "proxy_url", "proxy_providers", "proxy_ssh_host",
-                "proxy_ssh_user", "proxy_ssh_port", "proxy_autostart")
+                "proxy_ssh_user", "proxy_ssh_port", "proxy_autostart", "proxy_mode")
 
 
 @router.put("")
@@ -86,10 +87,15 @@ async def update_proxy(settings: dict):
     unknown = [k for k in settings if k not in PROXY_FIELDS]
     if unknown:
         raise HTTPException(400, f"不是跳板设置项: {', '.join(unknown)}")
+    if settings.get("proxy_mode", cfg.proxy_mode) not in ("ssh", "singbox"):
+        raise HTTPException(400, "proxy_mode 只能是 ssh 或 singbox")
+    old = cfg.model_copy()
     for k, v in settings.items():
         setattr(cfg, k, v)
     _save_config(cfg)
     try:
+        if old.proxy_mode != cfg.proxy_mode or old.proxy_url != cfg.proxy_url:
+            proxy_service.stop(old)            # 换了方式或端口：先停掉本服务起的旧隧道
         result = proxy_service.ensure(cfg) if cfg.proxy_enabled else proxy_service.stop(cfg)
     except Exception as e:
         result = {"success": False, "message": f"跳板处理失败: {e}"}
@@ -110,12 +116,17 @@ async def list_models(provider: str = "ollama", refresh: int = 0) -> list[dict]:
 
     def _decorate(rows: list[dict]) -> list[dict]:
         out = []
+        entries = model_capabilities.for_config(config)
         for r in rows:
             caps = model_registry.infer_caps(r.get("provider", ""), r.get("name", ""))
+            caps = model_capabilities.apply(caps, entries)
             out.append({**r, "in_library": (caps.provider, caps.model) in in_library,
                         "supports_tools": caps.supports_tools, "thinking": caps.thinking,
                         "thinking_levels": caps.thinking_levels,
-                        "default_thinking": caps.default_thinking})
+                        "default_thinking": caps.default_thinking,
+                        "thinking_source": caps.thinking_source, "thinking_protocol": caps.thinking_protocol,
+                        "thinking_source_url": caps.thinking_source_url,
+                        "thinking_checked_at": caps.thinking_checked_at})
         return out
 
     if provider == "ollama" or not provider:
@@ -125,7 +136,7 @@ async def list_models(provider: str = "ollama", refresh: int = 0) -> list[dict]:
         if not key:
             models.extend({**m, "needs_key": True, "stale": True} for m in static)
             return
-        cache_key = f"{name}|{base}"
+        cache_key = model_capabilities.scope(name, base, key)
         hit = _models_cache.get(cache_key)
         if hit and not refresh and time.time() - hit[0] < MODELS_TTL:
             models.extend(hit[1])
@@ -236,6 +247,29 @@ async def test_connection(req: TestConnectionRequest) -> TestConnectionResponse:
 async def proxy_status():
     """Is the jump-host tunnel up, and which providers go through it?"""
     return proxy_service.status(_load_config())
+
+
+@router.get("/proxy/singbox")
+async def singbox_info():
+    """sing-box 客户端配置摘要（不含凭据）。"""
+    return singbox_service.summary()
+
+
+@router.put("/proxy/singbox")
+async def singbox_save(body: dict):
+    """保存 sing-box 客户端配置：分享链接 / outbound JSON / 完整配置三选一。
+    当前正以 sing-box 方式运行时，重启一次让新配置生效。"""
+    cfg = _load_config()
+    host, port = proxy_service._port_of(cfg.proxy_url)
+    try:
+        info = singbox_service.save(body.get("text", ""), host, port)
+    except (ValueError, KeyError, json.JSONDecodeError) as e:
+        raise HTTPException(400, str(e))
+    result = None
+    if cfg.proxy_mode == "singbox" and cfg.proxy_enabled:
+        proxy_service.stop(cfg)
+        result = proxy_service.start(cfg)
+    return {"success": True, "message": "sing-box 配置已保存", "singbox": info, "proxy": result}
 
 
 @router.post("/proxy/start")

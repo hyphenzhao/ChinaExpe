@@ -8,8 +8,9 @@ PROVIDERS = ("ollama", "deepseek", "openai", "anthropic")
 # Providers that usually need the 跳板 from mainland China.
 DEFAULT_PROXY_PROVIDERS = ["openai", "anthropic"]
 
-THINKING_LEVELS = ("off", "low", "medium", "high")
-THINKING_LABELS = {"off": "不思考", "low": "少量思考", "medium": "中等思考", "high": "深度思考"}
+THINKING_LEVELS = ("off", "none", "on", "minimal", "low", "medium", "high", "xhigh", "max")
+THINKING_LABELS = {"off": "关闭", "none": "关闭", "on": "开启", "minimal": "极简",
+                   "low": "低", "medium": "中", "high": "高", "xhigh": "超高", "max": "最高"}
 ThinkingCap = Literal["none", "optional", "always"]   # 不支持 / 可开关 / 模型自己一直思考
 
 
@@ -28,12 +29,17 @@ class ModelRef(BaseModel):
     default_thinking: str = "off"
     max_tokens: int = 0             # 0 = 用各家默认
     note: str = ""
+    thinking_protocol: str = ""     # native parameter mapping, not a synthetic budget tier
+    thinking_source: str = ""       # remote / docs / manual / unknown
+    thinking_source_url: str = ""
+    thinking_checked_at: str = ""
 
 
 class ChatOptions(BaseModel):
     """单次请求的思考设置；chat_api 组装，llm_service 按提供商翻译。"""
     thinking: str = "off"
     max_tokens: int = 8192
+    thinking_protocol: str = ""
 
 
 class ModelPick(BaseModel):
@@ -82,6 +88,7 @@ class ApiConfig(BaseModel):
     proxy_ssh_user: str = "root"
     proxy_ssh_port: int = 22
     proxy_autostart: bool = True          # start the tunnel when the app starts
+    proxy_mode: str = "ssh"               # ssh = SSH 动态转发；singbox = 本机 sing-box 客户端连跳板机
     enabled_models: list[ModelRef] = Field(default_factory=list)   # 模型库
 
 
@@ -110,6 +117,7 @@ class ApiConfigResponse(BaseModel):
     proxy_ssh_user: str = ""
     proxy_ssh_port: int = 22
     proxy_autostart: bool = True
+    proxy_mode: str = "ssh"
     enabled_models: list[ModelRef] = Field(default_factory=list)
 
     @classmethod
@@ -132,6 +140,7 @@ class ApiConfigResponse(BaseModel):
             proxy_ssh_user=config.proxy_ssh_user,
             proxy_ssh_port=config.proxy_ssh_port,
             proxy_autostart=config.proxy_autostart,
+            proxy_mode=config.proxy_mode,
             enabled_models=config.enabled_models,
         )
 

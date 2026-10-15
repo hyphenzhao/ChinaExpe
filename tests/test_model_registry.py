@@ -7,11 +7,12 @@ from app.services import model_registry as mr
 
 @pytest.mark.parametrize("provider,model,tools,thinking", [
     ("deepseek", "deepseek-reasoner", False, "always"),
-    ("deepseek", "deepseek-v4-pro", True, "always"),
-    ("deepseek", "deepseek-flash", True, "none"),
+    ("deepseek", "deepseek-v4-pro", True, "optional"),
+    ("deepseek", "deepseek-flash", True, "optional"),
     ("anthropic", "claude-opus-5", True, "optional"),
-    ("anthropic", "claude-haiku-4-5-20251001", True, "none"),
+    ("anthropic", "claude-haiku-4-5-20251001", True, "optional"),
     ("openai", "gpt-5.5-2026-04-23", True, "optional"),
+    ("openai", "gpt-6.1-sol", True, "optional"),
     ("openai", "gpt-4o", True, "none"),
     ("ollama", "qwen3:8b", True, "none"),
     ("ollama", "deepseek-r1:7b", True, "always"),
@@ -36,7 +37,7 @@ def test_normalize_dedupes_and_infers():
     ])
     assert [(r.provider, r.model) for r in rows] == [("anthropic", "claude-opus-5"), ("deepseek", "deepseek-reasoner")]
     assert rows[0].label == "claude-opus-5"
-    assert rows[0].thinking == "optional" and rows[0].default_thinking == "medium"
+    assert rows[0].thinking == "optional" and rows[0].default_thinking == "high"
     assert rows[1].supports_tools is False      # reasoner 不支持工具，按 id 收紧
 
 
@@ -76,7 +77,7 @@ def test_resolve_falls_back_to_inference():
     ("optional", ["off", "low", "medium", "high"], "high", "high"),
     ("optional", ["off", "low", "medium", "high"], "", "medium"),
     ("optional", ["off", "low", "medium", "high"], "nonsense", "medium"),
-    ("optional", ["off", "low", "medium", "high"], "off", ""),
+    ("optional", ["off", "low", "medium", "high"], "off", "off"),
     ("none", [], "high", ""),
     ("always", [], "high", ""),
 ])
@@ -90,3 +91,13 @@ def test_is_ready():
     cfg = ApiConfig(anthropic_api_key="sk-x")
     assert mr.is_ready(cfg, "anthropic") and mr.is_ready(cfg, "ollama")
     assert not mr.is_ready(cfg, "openai")
+
+
+def test_gpt61_updates_saved_capabilities_and_rejects_off():
+    for saved in (ModelRef(provider="openai", model="gpt-6.1-sol"),
+                  ModelRef(provider="openai", model="gpt-6.1-sol", thinking="optional",
+                           thinking_levels=["off", "low", "medium", "high"], default_thinking="off")):
+        ref = mr.normalize([saved])[0]
+        assert ref.thinking_levels == ["low", "medium", "high", "xhigh", "max"]
+        assert mr.effective_thinking(ref, "off") == "medium"
+        assert mr.effective_thinking(ref, "high") == "high"

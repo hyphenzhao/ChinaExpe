@@ -1,7 +1,7 @@
 """LLM service - abstract streaming for Ollama, DeepSeek, OpenAI and Anthropic.
 
-Supports text streaming and tool/function calling.  DeepSeek and OpenAI share
-the OpenAI-compatible wire format; Anthropic's Messages API is converted in
+Supports text streaming and tool/function calling. OpenAI reasoning tool calls
+use Responses; older models and DeepSeek use Chat Completions. Anthropic is converted in
 _stream_anthropic.  Overseas providers can go through the 跳板 (see
 proxy_service): config_store.proxy_for(provider) decides per request.
 """
@@ -12,11 +12,12 @@ from typing import AsyncGenerator, Optional
 import httpx
 
 from ..models.config import ChatOptions
+from . import openai_responses as responses
 
 ANTHROPIC_VERSION = "2023-06-01"
 # 思考预算（tokens）：Anthropic 要求 ≥1024 且 max_tokens 必须大于预算
 ANTHROPIC_BUDGET = {"low": 2048, "medium": 8192, "high": 24576}
-OPENAI_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
+OPENAI_EFFORT = {lv: lv for lv in ("none", "minimal", "low", "medium", "high", "xhigh", "max")}
 RETRY_STATUS = (400, 404, 422)          # 参数不被接受时，去掉思考参数重试一次
 
 
@@ -173,9 +174,12 @@ class LLMService:
         options: Optional[ChatOptions] = None,
     ) -> AsyncGenerator[dict, None]:
         """Stream from an OpenAI-compatible API (DeepSeek, OpenAI) with tool calls."""
+        if provider == "openai" and responses.prefers_responses(model, messages, tools):
+            async for event in self._stream_openai_responses(messages, model, api_key, base_url, tools, options):
+                yield event
+            return
         label = "OpenAI" if provider == "openai" else "DeepSeek"
-        base = base_url.rstrip("/")
-        url = base + ("/chat/completions" if base.endswith("/v1") else "/v1/chat/completions")
+        url = responses.api_url(base_url, "chat/completions")
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -183,10 +187,16 @@ class LLMService:
         payload = {"model": model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
-        # DeepSeek 的思考由模型本身决定，不接受档位参数；只有 OpenAI 下发 reasoning_effort
+        # Native effort values only; never translate model depth into a percentage.
         extra: dict = {}
         if provider == "openai" and options and options.thinking in OPENAI_EFFORT:
             extra["reasoning_effort"] = OPENAI_EFFORT[options.thinking]
+        if provider == "deepseek" and options and options.thinking_protocol == "deepseek_effort":
+            if options.thinking == "off":
+                extra["thinking"] = {"type": "disabled"}
+            elif options.thinking in ("low", "high", "max"):
+                extra["thinking"] = {"type": "enabled"}
+                extra["reasoning_effort"] = options.thinking
         attempts = [{**payload, **extra}] + ([payload] if extra else [])
 
         try:
@@ -197,12 +207,24 @@ class LLMService:
                     ) as resp:
                         if resp.status_code != 200:
                             body = await resp.aread()
-                            # 参数不被接受时，去掉思考参数再试一次（还没吐过 token，安全）
-                            if resp.status_code in RETRY_STATUS and attempt + 1 < len(attempts):
+                            error = body.decode(errors="replace")
+                            # Some gateways use arbitrary model aliases: trust the explicit
+                            # endpoint error as well as our known-model routing rule.
+                            if provider == "openai" and responses.requires_responses(resp.status_code, error):
+                                async for event in self._stream_openai_responses(
+                                    messages, model, api_key, base_url, tools, options
+                                ):
+                                    yield event
+                                return
+                            # Retry only a rejected reasoning parameter, not auth, quota,
+                            # invalid schemas or model errors. No output has been emitted.
+                            if (responses.rejects_reasoning_parameter(resp.status_code, error)
+                                    and attempt + 1 < len(attempts)):
+                                yield {"type": "warning", "message": "此接口不接受思考参数，本次按模型默认设置继续。"}
                                 continue
                             yield {
                                 "type": "token",
-                                "content": f"[错误] {label} API 返回 {resp.status_code}: {body.decode()[:200]}",
+                                "content": f"[错误] {label} API 返回 {resp.status_code}: {error[:600]}",
                             }
                             return
 
@@ -274,6 +296,25 @@ class LLMService:
         except Exception as e:
             yield {"type": "token", "content": f"[错误] {label} 请求失败: {str(e)}"}
 
+    async def _stream_openai_responses(self, messages, model, api_key, base_url, tools, options):
+        """Keep tool calling and reasoning together; don't silently downgrade either."""
+        url = responses.api_url(base_url, "responses")
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        body = responses.payload(messages, model, tools, options)
+        try:
+            async with _client("openai") as client:
+                async with client.stream("POST", url, json=body, headers=headers) as resp:
+                    if resp.status_code != 200:
+                        error = (await resp.aread()).decode(errors="replace")
+                        hint = ("；当前 Endpoint 可能不支持 Responses，请配置支持 /v1/responses 的地址"
+                                if resp.status_code in (404, 405, 501) else "")
+                        yield {"type": "error", "message": f"[错误] OpenAI Responses 返回 {resp.status_code}: {error[:600]}{hint}"}
+                        return
+                    async for event in responses.stream_events(resp):
+                        yield event
+        except Exception as e:
+            yield {"type": "error", "message": f"[错误] OpenAI Responses 请求失败: {str(e) or type(e).__name__}"}
+
     # ------------------------------------------------------------- anthropic
     @staticmethod
     def _to_anthropic(messages: list[dict], tools: Optional[list[dict]]) -> tuple[str, list[dict], list[dict]]:
@@ -341,11 +382,29 @@ class LLMService:
             payload["tools"] = atools
         extra: dict = {}
         level = options.thinking if options else ""
-        if level in ANTHROPIC_BUDGET:
+        protocol = options.thinking_protocol if options else ""
+        if protocol == "anthropic_adaptive":
+            if level == "off":
+                extra["thinking"] = {"type": "disabled"}
+                extra["output_config"] = {"effort": "low"}
+            elif level in ("low", "medium", "high", "xhigh", "max"):
+                extra["thinking"] = {"type": "adaptive"}
+                extra["output_config"] = {"effort": level}
+        elif protocol in ("anthropic_budget", "anthropic_effort_budget"):
+            if level == "off":
+                extra["thinking"] = {"type": "disabled"}
+            elif level:
+                extra["thinking"] = {"type": "enabled", "budget_tokens": 8192}
+                extra["max_tokens"] = max(base_max, 9216)
+                if protocol == "anthropic_effort_budget" and level in ("low", "medium", "high"):
+                    extra["output_config"] = {"effort": level}
+        elif level in ANTHROPIC_BUDGET:
             budget = ANTHROPIC_BUDGET[level]
             extra["thinking"] = {"type": "enabled", "budget_tokens": budget}
             extra["max_tokens"] = max(base_max, budget + 1024)   # API 要求 max_tokens > budget
-        attempts = [{**payload, **extra}] + ([payload] if extra else [])
+        # Native effort controls must not be silently discarded. The legacy budget
+        # retry is retained for old callers that have no protocol metadata.
+        attempts = [{**payload, **extra}] + ([payload] if extra and not protocol else [])
         try:
             async with _client("anthropic") as client:
                 for attempt, body_json in enumerate(attempts):
@@ -478,12 +537,30 @@ class LLMService:
             headers = {"Authorization": f"Bearer {api_key}"}
         via = "（经跳板）" if _proxy(provider) else ""
         try:
+            rows, after = [], None
             async with _client(provider, timeout=20.0) as client:
-                resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                models = [m.get("id", "") for m in resp.json().get("data", [])]
-                return True, f"连接成功{via}，找到 {len(models)} 个模型", models
-            return False, f"API 返回 {resp.status_code}{via}: {resp.text[:200]}", []
+                for _ in range(20):
+                    params = {"limit": 1000, **({"after_id": after} if after else {})} if provider == "anthropic" else None
+                    resp = await client.get(url, headers=headers, params=params)
+                    if resp.status_code != 200:
+                        return False, f"API 返回 {resp.status_code}{via}: {resp.text[:200]}", []
+                    data = resp.json()
+                    rows.extend(m for m in data.get("data", []) if isinstance(m, dict) and m.get("id"))
+                    if provider != "anthropic" or not data.get("has_more"):
+                        break
+                    cursor = data.get("last_id")
+                    if not cursor or cursor == after:
+                        return False, "模型列表分页异常，保留上次能力信息", []
+                    after = cursor
+                else:
+                    return False, "模型列表分页过多，保留上次能力信息", []
+            from . import model_capabilities
+            try:
+                model_capabilities.remember(provider, base_url, api_key, rows)
+            except OSError:
+                pass  # Model listing still works if the optional cache is unwritable.
+            models = [m["id"] for m in rows]
+            return True, f"连接成功{via}，找到 {len(models)} 个模型", models
         except Exception as e:
             hint = "" if _proxy(provider) else "；大陆网络访问 OpenAI/Anthropic 通常要先开跳板" if provider in ("openai", "anthropic") else ""
             return False, f"连接失败{via}: {str(e)}{hint}", []

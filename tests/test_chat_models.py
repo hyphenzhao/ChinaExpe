@@ -1,6 +1,7 @@
 """聊天会话的模型选择：能力决定工具、选择写回会话、跳板只提示不自动启。"""
 import json
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -8,6 +9,7 @@ from app.main import app
 from app.models.config import ApiConfig, ModelRef
 from app.services import config_store, proxy_service
 from app.api import chat_api
+from app.services import llm_service as ls
 
 
 @pytest.fixture()
@@ -68,10 +70,11 @@ def test_tools_disabled_for_reasoner(client, recorder):
     assert recorder[0]["tools"] is None
 
 
-def test_thinking_clamped_for_model_without_it(client, recorder):
+def test_native_deepseek_thinking_reaches_adapter(client, recorder):
     sid = client.post("/api/chats", json={"title": "t"}).json()["id"]
     _send(client, sid, provider="deepseek", model="deepseek-flash", thinking="high")
-    assert recorder[0]["options"].thinking == ""     # flash 不支持档位
+    assert recorder[0]["options"].thinking == "high"
+    assert recorder[0]["options"].thinking_protocol == "deepseek_effort"
 
 
 def test_proxy_warning_event_but_no_autostart(client, recorder):
@@ -95,6 +98,61 @@ def test_update_session_validates(client):
     assert ok.status_code == 200 and ok.json()["thinking"] == "low"
 
 
+def test_responses_tool_round_trip_through_chat_api(client, monkeypatch):
+    """Exercise actual adapter + API loop with a fake transport and fake tool."""
+    seen, executed = [], []
+    reasoning = {"type": "reasoning", "id": "rs_test", "summary": [], "encrypted_content": "opaque-secret"}
+    call = {"type": "function_call", "id": "fc_test", "call_id": "call_test",
+            "name": "search_classics", "arguments": '{"query":"用神"}', "status": "completed"}
+
+    async def fake_messages(**kwargs):
+        return [{"role": "user", "content": kwargs["user_message"]}], {}
+
+    async def fake_tool(name, args):
+        executed.append((name, args))
+        return {"content": "典籍依据"}
+
+    def fake_client(provider, timeout=120):
+        assert provider == "openai"
+        def handle(request):
+            assert request.url.path == "/v1/responses"
+            body = json.loads(request.content)
+            seen.append(body)
+            items = [reasoning, call] if len(seen) == 1 else [
+                {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "根据典籍回答"}]}]
+            return httpx.Response(200, content=("data: " + json.dumps({"type": "response.completed",
+                "response": {"status": "completed", "output": items}}, ensure_ascii=False) + "\n\n").encode())
+        return httpx.AsyncClient(transport=httpx.MockTransport(handle))
+
+    monkeypatch.setattr(ls, "_client", fake_client)
+    monkeypatch.setattr(chat_api.agent_service, "build_messages", fake_messages)
+    monkeypatch.setattr(chat_api, "execute_tool", fake_tool)
+    sid = client.post("/api/chats", json={"title": "t"}).json()["id"]
+    result = _send(client, sid, provider="openai", model="gpt-6.1-sol", thinking="high")
+    assert "event: done" in result.text and "event: error" not in result.text
+    assert "event: tool_result" in result.text and "根据典籍回答" in result.text
+    assert seen[1]["input"][-3:] == [reasoning, call,
+        {"type": "function_call_output", "call_id": "call_test", "output": "典籍依据"}]
+    assert executed == [("search_classics", {"query": "用神"})]
+    assert "opaque-secret" not in result.text
+    saved = client.get(f"/api/chats/{sid}").json()
+    assert "opaque-secret" not in json.dumps(saved)
+
+
+@pytest.mark.parametrize("error", [{"type": "error", "message": "Responses incomplete"},
+                                  {"type": "token", "content": "[错误] upstream failed"}])
+def test_error_after_partial_text_is_not_saved_as_success(client, monkeypatch, error):
+    async def fail(**kwargs):
+        yield {"type": "warning", "message": "兼容提示"}
+        yield {"type": "token", "content": "先查一下"}
+        yield error
+    monkeypatch.setattr(chat_api.llm_service, "stream_chat", fail)
+    sid = client.post("/api/chats", json={"title": "t"}).json()["id"]
+    result = _send(client, sid)
+    assert "event: error" in result.text and "event: done" not in result.text
+    assert "兼容提示" in result.text
+
+
 def test_legacy_session_without_thinking_still_works(client, recorder, tmp_path):
     legacy = {"id": "old1", "title": "旧会话", "mode": "theory", "person": None,
               "model": "claude-sonnet-5", "provider": "anthropic", "messages": [],
@@ -105,7 +163,7 @@ def test_legacy_session_without_thinking_still_works(client, recorder, tmp_path)
     r = _send(client, "old1")
     assert r.status_code == 200
     assert recorder[0]["model"] == "claude-sonnet-5"           # 不在库里也照用
-    assert recorder[0]["options"].thinking == "medium"         # 推断出可调思考，取默认档
+    assert recorder[0]["options"].thinking == "high"           # 官方默认档
 
 
 def test_no_model_configured_is_a_clear_error(client, recorder, monkeypatch):

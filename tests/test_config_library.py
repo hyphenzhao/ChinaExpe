@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.config import ApiConfig
+from app.models.config import ApiConfig, THINKING_LEVELS
 from app.services import config_store, proxy_service
 
 
@@ -79,5 +79,5 @@ def test_catalog_flags_proxy_and_keys(client):
     assert "隧道未监听" in by_id["claude-opus-5"]["warning"]
     assert by_id["gpt-5.5"]["needs_key"] and "API Key" in by_id["gpt-5.5"]["warning"]
     assert by_id["deepseek-flash"]["proxy_ok"] and by_id["deepseek-flash"]["warning"] == ""
-    assert [lv["value"] for lv in cat["thinking_levels"]] == ["off", "low", "medium", "high"]
+    assert [lv["value"] for lv in cat["thinking_levels"]] == list(THINKING_LEVELS)
     assert cat["proxy"]["listening"] is False

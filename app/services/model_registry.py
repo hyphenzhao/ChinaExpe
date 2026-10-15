@@ -1,19 +1,17 @@
 """模型库：每个模型会不会用工具、能不能调思考档位。
 
-聊天页要据此决定是否给出「思考模式」下拉，发送路径要据此决定是否下发 tools。
-判断按提供商 + 模型 id 子串，所以 `gpt-5.5-2026-04-23` 这种带日期的快照能继承
-`gpt-5` 的规则。未知 id 一律保守处理：可以用工具，不发思考参数，免得被接口拒绝。
+聊天页按模型的原生档位显示滑块，发送路径据此决定工具与思考参数。
+默认能力来自 thinking_profiles 中已核对的官方文档，config_store 再叠加远程能力缓存。
+未知 id 不发思考参数，也不伪造档位。
 
 纯函数，不读文件不联网，便于测试。
 """
 from __future__ import annotations
 
-import re
-
 from ..models.config import THINKING_LEVELS, ApiConfig, ModelRef
+from . import thinking_profiles as profiles
 
 _OPTIONAL_LEVELS = ["off", "low", "medium", "high"]
-_O_SERIES = re.compile(r"^o\d")
 
 
 def infer_caps(provider: str, model: str) -> ModelRef:
@@ -23,31 +21,9 @@ def infer_caps(provider: str, model: str) -> ModelRef:
     low = mid.lower()
     ref = ModelRef(provider=p or "ollama", model=mid, label=mid)
 
-    if p == "deepseek":
-        if "reasoner" in low:
-            ref.supports_tools = False          # deepseek-reasoner 不支持函数调用
-            ref.thinking = "always"
-        elif "v4-pro" in low or "reason" in low:
-            ref.thinking = "always"             # 思考由模型自己决定，没有档位开关
-    elif p == "anthropic":
-        if "haiku" in low:
-            ref.thinking = "none"
-        else:
-            ref.thinking = "optional"
-    elif p == "openai":
-        if low.startswith("gpt-5") or _O_SERIES.match(low):
-            ref.thinking = "optional"
-    elif p == "ollama":
-        if any(t in low for t in ("r1", "qwq", "thinking")):
-            ref.thinking = "always"
-
-    if ref.thinking == "optional":
-        ref.thinking_levels = list(_OPTIONAL_LEVELS)
-        ref.default_thinking = "medium"
-    else:
-        ref.thinking_levels = []
-        ref.default_thinking = "off"
-    return ref
+    if p == "deepseek" and "reasoner" in low:
+        ref.supports_tools = False
+    return ref.model_copy(update=profiles.documented(p, mid))
 
 
 def normalize(models: list[ModelRef]) -> list[ModelRef]:
@@ -68,17 +44,32 @@ def normalize(models: list[ModelRef]) -> list[ModelRef]:
         guess = infer_caps(*key)
         if not ref.label:
             ref.label = ref.model
-        if ref.thinking == "none" and not ref.thinking_levels:
-            ref.thinking = guess.thinking          # 没写过就按 id 推断
-            ref.thinking_levels = guess.thinking_levels
-            ref.default_thinking = guess.default_thinking
+        # Refresh generated/legacy capabilities when documented profiles expand.
+        # Deliberate custom subsets remain usable, but remote data is applied later.
+        legacy = not ref.thinking_source and ref.thinking_levels in ([], _OPTIONAL_LEVELS, ["low", "medium", "high"])
+        if legacy or ref.thinking_source in ("docs", "unknown", "remote"):
+            preferred = ref.default_thinking
+            ref = ref.model_copy(update={f: getattr(guess, f) for f in profiles.FIELDS})
+            if preferred in ref.thinking_levels and (m.thinking_levels or m.thinking_source):
+                ref.default_thinking = preferred
+        else:
+            ref.thinking_source = "manual"
+            ref.thinking_protocol = ref.thinking_protocol or guess.thinking_protocol
+            # Translate the old OpenAI 'off' label to the actual API value.
+            if ref.provider == "openai" and "off" in ref.thinking_levels and "none" in guess.thinking_levels:
+                ref.thinking_levels = ["none" if lv == "off" else lv for lv in ref.thinking_levels]
+                if ref.default_thinking == "off":
+                    ref.default_thinking = "none"
         if ref.supports_tools and not guess.supports_tools:
             ref.supports_tools = False             # 例如 deepseek-reasoner，安全侧收紧
         if ref.thinking == "optional":
-            if not ref.thinking_levels:
-                ref.thinking_levels = list(_OPTIONAL_LEVELS)
+            ref.thinking_levels = [lv for lv in THINKING_LEVELS if lv in ref.thinking_levels]
+            if guess.thinking_source == "docs":
+                ref.thinking_levels = [lv for lv in ref.thinking_levels if lv in guess.thinking_levels]
             if ref.default_thinking not in ref.thinking_levels:
-                ref.default_thinking = "medium"
+                ref.default_thinking = guess.default_thinking if guess.default_thinking in ref.thinking_levels else next(iter(ref.thinking_levels), "off")
+            if not ref.thinking_levels:
+                ref.thinking = "none"
         else:
             ref.thinking_levels = []
             ref.default_thinking = "off"
@@ -113,9 +104,11 @@ def effective_thinking(ref: ModelRef, requested: str | None) -> str:
     if ref.thinking != "optional":
         return ""                          # none：不支持；always：模型自己思考，不带参数
     lv = (requested or "").strip().lower()
+    if lv == "off" and "none" in ref.thinking_levels:
+        lv = "none"
     if lv not in THINKING_LEVELS or lv not in ref.thinking_levels:
         lv = ref.default_thinking
-    return "" if lv == "off" else lv
+    return lv  # Explicit 'none'/'off' must reach the provider, not become its default.
 
 
 def is_ready(cfg: ApiConfig, provider: str) -> bool:

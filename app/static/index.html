@@ -109,7 +109,12 @@
                 <div class="context-tags" id="context-tags"></div>
                 <div class="chat-model-bar" id="chat-model-bar">
                     <select id="chat-model" class="chat-mini-select" title="本次对话使用的模型" onchange="onChatModelChange()"></select>
-                    <select id="chat-thinking" class="chat-mini-select" title="思考强度" onchange="onChatThinkingChange()"></select>
+                    <div id="chat-thinking-wrap" class="thinking-control hidden">
+                        <div class="thinking-heading"><label for="chat-thinking">思考程度</label><output id="chat-thinking-value" for="chat-thinking"></output></div>
+                        <input id="chat-thinking" type="range" min="0" max="0" step="1" value="0" aria-label="思考程度" oninput="previewThinking()" onchange="onChatThinkingChange()">
+                        <div id="chat-thinking-ticks" class="thinking-ticks" aria-hidden="true"></div>
+                        <div id="chat-thinking-source" class="thinking-source"></div>
+                    </div>
                     <span id="chat-proxy-warn" class="chat-proxy-warn hidden" onclick="openConfig()"></span>
                 </div>
                 <div class="input-row">
@@ -255,8 +260,19 @@
                     <label><input type="checkbox" id="proxy-enabled"> 启用跳板</label>
                     <label style="margin-left:1rem;"><input type="checkbox" id="proxy-autostart" checked> 随服务自动启动</label>
                 </div>
+                <div class="form-group"><label>连接方式</label>
+                    <select id="proxy-mode" class="input" onchange="onProxyModeChange()">
+                        <option value="singbox">sing-box 客户端（推荐：连跳板机上已有的 sing-box，抗丢包）</option>
+                        <option value="ssh">SSH 隧道（大陆直连海外 SSH 常丢包断线）</option>
+                    </select></div>
                 <div class="form-group"><label>本地 SOCKS5 地址</label><input type="text" id="proxy-url" class="input" placeholder="socks5h://127.0.0.1:1080"></div>
-                <div class="form-group"><label>跳板机</label>
+                <div class="form-group" id="proxy-singbox-box"><label>sing-box 客户端配置</label>
+                    <div id="singbox-summary" class="text-muted" style="font-size:.75rem;margin-bottom:.3rem;"></div>
+                    <textarea id="singbox-text" class="input" rows="3" placeholder="粘贴分享链接（vless:// trojan:// hysteria2:// tuic:// ss:// vmess://），或 outbound / 完整配置 JSON"></textarea>
+                    <div class="model-actions" style="margin-top:.3rem;"><button class="btn btn-secondary btn-sm" onclick="saveSingbox()">💾 保存客户端配置</button></div>
+                    <p class="text-muted" style="font-size:.7rem;margin-top:.2rem;">凭据只存在 NAS 的 ~/.config/sing-box/（权限 600），不进仓库，页面只显示摘要。跳板机上不做任何改动。</p>
+                </div>
+                <div class="form-group" id="proxy-ssh-box"><label>跳板机</label>
                     <div class="model-actions">
                         <input type="text" id="proxy-ssh-user" class="input" style="max-width:8rem;" placeholder="root">
                         <input type="text" id="proxy-ssh-host" class="input" placeholder="45.77.19.55">

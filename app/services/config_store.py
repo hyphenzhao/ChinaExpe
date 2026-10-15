@@ -15,10 +15,14 @@ CONFIG_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "config.j
 
 def load() -> ApiConfig:
     from . import model_registry          # local import: registry imports models.config only
+    from . import model_capabilities
 
     if CONFIG_FILE.exists():
         try:
-            return model_registry.migrate(ApiConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8"))))
+            cfg = model_registry.migrate(ApiConfig(**json.loads(CONFIG_FILE.read_text(encoding="utf-8"))))
+            entries = model_capabilities.for_config(cfg)
+            cfg.enabled_models = [model_capabilities.apply(m, entries) for m in cfg.enabled_models]
+            return cfg
         except Exception:
             pass
     return model_registry.migrate(ApiConfig())

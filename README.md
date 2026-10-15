@@ -140,10 +140,30 @@ AI 新工具：`get_ziwei_patterns`、`get_bazi_analysis`、`get_life_events`、
 ## 模型库与对话页切换
 
 设置 → 模型库里跨提供商勾选多个模型，圆点标出默认；对话页输入框上方可为**当前会话**切换模型与思考档位，
-选择写回 `data/sessions/<id>.json`。能力由 `app/services/model_registry.py` 按模型 id 推断：
-`deepseek-reasoner` 不下发工具，Claude 与 GPT-5 系可调思考档位，其余默认不发思考参数。
-思考档位翻译为 Anthropic 的 `thinking.budget_tokens` 或 OpenAI 的 `reasoning_effort`，
-被接口拒绝时自动去掉参数重试一次。Anthropic 扩展思考下，`tool_use` 前的思考块会原样回传。
+选择写回 `data/sessions/<id>.json`。思考程度使用可拖动、可键盘操作的滑块，只在模型支持的离散档位间切换；
+无思考能力或尚未确认能力的模型隐藏这一栏，只有开关的旧模型显示 `off / on`。刻度不表示等比例算力。
+设置页「刷新模型」会同时读取远程能力：Anthropic Models API 的 thinking/effort 元数据优先，
+兼容端点明确提供的 reasoning 枚举也可读取。OpenAI 官方 `/models` 没有档位元数据，因此按
+`app/services/thinking_profiles.py` 中核对的官方文档补齐，并在滑块下面标明「远程模型接口」或「官方文档规则」。
+远程能力保存在 `data/model_capabilities.json`，按提供商、Endpoint、密钥哈希隔离；失败时保留上次成功结果。
+OpenAI 下发原生推理参数；Claude adaptive 模型下发 `output_config.effort`，旧 extended-thinking 模型用开关及固定预算；
+DeepSeek Flash/Pro 支持 `off / low / high / max`，分别下发 thinking 开关与原生 `reasoning_effort`。
+OpenAI 的 GPT-6 系列带工具时使用 `/v1/responses`（`reasoning.effort`）；旧模型继续使用
+Chat Completions（`reasoning_effort`），若接口明确要求 Responses，则自动切换。
+只有明确拒绝思考参数时才去掉该参数重试，不会对鉴权、额度或工具定义错误盲目重试。
+GPT-6.1 Sol 不支持关闭思考，页面提供 `low / medium / high / xhigh / max`，旧会话的“不思考”自动收敛到有效档位。
+Responses 使用 `store:false`，工具轮次之间原样回传输出项与加密推理状态，不把这些状态展示或写入对话文件。
+流未正常完成时报告中断，不执行尚未完成的工具调用。第三方 Endpoint 需要支持 `/v1/responses`；
+不支持时明确报错，不会悄悄关闭工具或思考。Anthropic 的 `tool_use` 前思考块仍原样回传。
+
+接口兼容回归测试（MockTransport，不调用付费模型）：
+`pytest tests/test_openai_responses.py tests/test_llm_options.py tests/test_chat_models.py tests/test_model_registry.py tests/test_thinking_capabilities.py -q`。
+滑块浏览器测试：`node scripts/test_thinking_ui.cjs`（需要 Playwright 与 Microsoft Edge；只运行本地模拟页面）。
+能力依据：[OpenAI Models API](https://developers.openai.com/api/reference/resources/models/methods/list)、
+[GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)、
+[Claude Models API](https://platform.claude.com/docs/en/api/http/models)、
+[Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort)、
+[DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
 跳板设置与模型配置分开保存：`PUT /api/config` 永远不碰隧道，改跳板请用「应用跳板设置」。
 （此前两者同用一个保存按钮，页面上没勾选的复选框会把正在用的隧道悄悄停掉。）

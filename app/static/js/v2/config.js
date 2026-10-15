@@ -24,6 +24,9 @@ async function loadConfigPage() {
     document.getElementById('proxy-ssh-user').value = c.proxy_ssh_user || 'root';
     document.getElementById('proxy-ssh-host').value = c.proxy_ssh_host || '45.77.19.55';
     document.getElementById('proxy-ssh-port').value = c.proxy_ssh_port || 22;
+    document.getElementById('proxy-mode').value = c.proxy_mode || 'ssh';
+    onProxyModeChange();
+    refreshSingbox();
     const on = c.proxy_providers || ['openai', 'anthropic'];
     document.querySelectorAll('.proxy-provider').forEach(cb => cb.checked = on.includes(cb.value));
     document.querySelectorAll('.toggle-btn').forEach(btn => btn.onclick = () => { _configProvider = btn.dataset.provider; updateProviderUI(); refreshModels(false); });
@@ -71,6 +74,7 @@ async function refreshModels(force) {
     const extra = _library.filter(m => m.provider === _configProvider && !rows.some(r => r.name === m.model))
         .map(m => ({ name: m.model, provider: m.provider, manual: true, thinking: m.thinking }));
     renderCatalog([...rows, ...extra]);
+    await loadCatalog();  // Model refresh also refreshes the remote effort metadata.
 }
 
 function renderCatalog(rows) {
@@ -171,6 +175,7 @@ async function applyProxySettings() {
         proxy_ssh_host: document.getElementById('proxy-ssh-host').value || '45.77.19.55',
         proxy_ssh_port: parseInt(document.getElementById('proxy-ssh-port').value) || 22,
         proxy_providers: [...document.querySelectorAll('.proxy-provider')].filter(c => c.checked).map(c => c.value),
+        proxy_mode: document.getElementById('proxy-mode').value,
     };
     _proxyOut(true, '正在应用…');
     try {
@@ -183,6 +188,39 @@ async function applyProxySettings() {
 }
 
 /* ---------- 跳板 ---------- */
+function onProxyModeChange() {
+    const sb = document.getElementById('proxy-mode').value === 'singbox';
+    document.getElementById('proxy-singbox-box').style.display = sb ? '' : 'none';
+    document.getElementById('proxy-ssh-box').style.display = sb ? 'none' : '';
+}
+
+function _singboxLine(s) {
+    if (!s.binary) return '<span class="text-red">NAS 上没有 sing-box 程序</span>';
+    if (!s.configured) return '尚未配置';
+    if (s.error) return `<span class="text-red">${esc(s.error)}</span>`;
+    return `已配置：<b>${esc(s.type)}</b> → ${esc(s.server)}:${s.server_port}`
+        + `${s.reality ? ' · Reality' : s.tls ? ' · TLS' : ''} · ${esc(s.transport)}`;
+}
+
+async function refreshSingbox() {
+    const el = document.getElementById('singbox-summary');
+    try { el.innerHTML = _singboxLine(await API.get('/api/config/proxy/singbox')); }
+    catch (e) { el.textContent = '无法读取 sing-box 配置'; }
+}
+
+async function saveSingbox() {
+    const ta = document.getElementById('singbox-text');
+    if (!ta.value.trim()) { _proxyOut(false, '请先粘贴分享链接或配置'); return; }
+    _proxyOut(true, '正在校验并保存…');
+    try {
+        const r = await API.put('/api/config/proxy/singbox', { text: ta.value });
+        ta.value = '';                          // 不在页面上留凭据
+        _proxyOut(r.proxy ? r.proxy.success !== false : true, r.message + (r.proxy && r.proxy.message ? '；' + r.proxy.message : '；切换到 sing-box 方式并启用跳板后生效'));
+        document.getElementById('singbox-summary').innerHTML = _singboxLine(r.singbox);
+    } catch (e) { _proxyOut(false, e.message); }
+    refreshProxyStatus();
+}
+
 function _proxyOut(ok, msg) {
     const out = document.getElementById('proxy-result');
     out.className = 'test-result ' + (ok ? 'success' : 'error');
@@ -194,7 +232,7 @@ async function refreshProxyStatus() {
     try {
         const s = await API.get('/api/config/proxy');
         el.innerHTML = `隧道：${s.listening ? '<span class="text-green">已监听</span>' : '<span class="text-red">未监听</span>'}`
-            + ` ${esc(s.proxy_url || '')} · 跳板机 ${esc(s.ssh || '')}`
+            + ` ${esc(s.proxy_url || '')} · ${esc(s.via || s.ssh || '')}`
             + ` · 走跳板：${(s.providers || []).map(esc).join('、') || '无'}`
             + (s.managed_by_app ? ` · 由本服务启动 pid ${s.pid}` : '');
     } catch (e) { el.textContent = '无法获取跳板状态'; }

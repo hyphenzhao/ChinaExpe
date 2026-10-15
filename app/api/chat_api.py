@@ -187,7 +187,8 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
     model_name, provider_name = ref.model, ref.provider
     level = model_registry.effective_thinking(ref, session.thinking)
     supports_tools = ref.supports_tools
-    options = ChatOptions(thinking=level, max_tokens=ref.max_tokens or 8192)
+    options = ChatOptions(thinking=level, max_tokens=ref.max_tokens or 8192,
+                          thinking_protocol=ref.thinking_protocol)
     proxy_warning = proxy_service.warning_for(config, provider_name)
 
     async def event_generator():
@@ -223,7 +224,13 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                     tools=stream_tools,
                     options=options,
                 ):
-                    if event["type"] == "thinking":
+                    if event["type"] == "error":
+                        raise Exception(event["message"])
+
+                    elif event["type"] == "warning":
+                        yield _sse_event("warning", event)
+
+                    elif event["type"] == "thinking":
                         reasoning_text += event["content"]
                         yield _sse_event("thinking", {"type": "thinking", "content": event["content"]})
 
@@ -231,12 +238,9 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                         token = event["content"]
                         full_response += token
                         turn_text += token
-                        # Error detection on first token
-                        if (
-                            full_response.startswith("[错误]")
-                            and len(full_response) == len(token)
-                        ):
-                            raise Exception(full_response)
+                        # Provider errors can occur after a successful tool round too.
+                        if token.startswith("[错误]"):
+                            raise Exception(token)
                         yield _sse_event(
                             "token", {"type": "token", "content": token}
                         )
@@ -261,6 +265,10 @@ async def send_message(session_id: str, req: SendMessageRequest, request: Reques
                         if event.get("thinking_blocks"):
                             # Anthropic 扩展思考：tool_use 前的思考块必须原样回传
                             call_msg["thinking_blocks"] = event["thinking_blocks"]
+                        if event.get("response_items"):
+                            # Responses requires encrypted reasoning + function_call items
+                            # to be replayed verbatim before function_call_output.
+                            call_msg["response_items"] = event["response_items"]
                         current_messages.append(call_msg)
                         turn_text = ""
 

@@ -9,6 +9,11 @@ plain SSH dynamic forward started as the normal app user:
 Nothing is installed or reconfigured on the jump host, so the sing-box service
 running there is untouched — this only opens an extra SSH session.  The user
 turns it on and off in the settings page; DeepSeek and Ollama keep going direct.
+
+proxy_mode = "singbox" runs a local sing-box client instead (see singbox_service):
+plain SSH from the mainland to the VPS loses most of its packets, while the
+sing-box server on the jump host is built for exactly that path.  Either way the
+app only ever sees the same local SOCKS5 port.
 """
 from __future__ import annotations
 
@@ -21,10 +26,23 @@ import time
 from urllib.parse import urlparse
 
 from ..models.config import ApiConfig
+from . import singbox_service
 
 # marker so we only ever kill the tunnel we started
 MARKER = "xuanxue-jumphost"
 _proc: subprocess.Popen | None = None
+_proc_mode: str | None = None
+
+
+def _mode(cfg: ApiConfig) -> str:
+    return "singbox" if getattr(cfg, "proxy_mode", "ssh") == "singbox" else "ssh"
+
+
+def _via(cfg: ApiConfig) -> str:
+    if _mode(cfg) == "singbox":
+        s = singbox_service.summary()
+        return f"sing-box {s.get('type', '未配置')} → {s.get('server', '?')}:{s.get('server_port', '?')}"
+    return f"ssh {cfg.proxy_ssh_user}@{cfg.proxy_ssh_host}:{cfg.proxy_ssh_port}"
 
 
 def _port_of(proxy_url: str) -> tuple[str, int]:
@@ -49,9 +67,13 @@ def status(cfg: ApiConfig) -> dict:
         "providers": cfg.proxy_providers,
         "listening": port_open(host, port),
         "managed_by_app": running,
+        "managed_mode": _proc_mode if running else None,
         "pid": _proc.pid if running else None,
+        "mode": _mode(cfg),
+        "via": _via(cfg),
         "ssh": f"{cfg.proxy_ssh_user}@{cfg.proxy_ssh_host}:{cfg.proxy_ssh_port}",
         "ssh_available": bool(shutil.which("ssh")),
+        "singbox": singbox_service.summary(),
     }
 
 
@@ -60,7 +82,7 @@ def snapshot(cfg: ApiConfig, timeout: float = 0.3) -> dict:
     host, port = _port_of(cfg.proxy_url)
     return {"enabled": cfg.proxy_enabled, "listening": port_open(host, port, timeout),
             "providers": cfg.proxy_providers, "proxy_url": cfg.proxy_url,
-            "ssh": f"{cfg.proxy_ssh_user}@{cfg.proxy_ssh_host}"}
+            "mode": _mode(cfg), "ssh": f"{cfg.proxy_ssh_user}@{cfg.proxy_ssh_host}"}
 
 
 def warning_for(cfg: ApiConfig, provider: str, timeout: float = 0.3) -> str:
@@ -75,12 +97,40 @@ def warning_for(cfg: ApiConfig, provider: str, timeout: float = 0.3) -> str:
     return ""
 
 
+def _start_singbox(cfg: ApiConfig, host: str, port: int, wait: float) -> dict:
+    global _proc, _proc_mode
+    b = singbox_service.binary()
+    if not b:
+        return {"success": False, "message": "本机没有 sing-box（应在 ~/.local/bin/sing-box）", **status(cfg)}
+    if not singbox_service.CONF_PATH.exists():
+        return {"success": False, "message": "还没有 sing-box 客户端配置，请先在设置里粘贴分享链接并保存", **status(cfg)}
+    singbox_service.rebind(host, port)
+    try:
+        log = open(singbox_service.LOG_PATH, "w")          # 输出进文件，不用管道，免得写满后卡住
+        _proc = subprocess.Popen([b, "run", "-c", str(singbox_service.CONF_PATH)],
+                                 stdout=log, stderr=log, start_new_session=True)
+        _proc_mode = "singbox"
+    except Exception as e:
+        return {"success": False, "message": f"启动失败: {e}", **status(cfg)}
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        if port_open(host, port):
+            return {"success": True, "message": f"sing-box 已启动，SOCKS5 监听 {host}:{port}", **status(cfg)}
+        if _proc.poll() is not None:
+            _proc = None
+            return {"success": False, "message": f"sing-box 退出: {singbox_service.log_tail(200)}", **status(cfg)}
+        time.sleep(0.3)
+    return {"success": False, "message": "启动超时，端口未监听", **status(cfg)}
+
+
 def start(cfg: ApiConfig, wait: float = 20.0) -> dict:
-    """Start the SSH dynamic forward if the port is not already serving."""
-    global _proc
+    """Start the tunnel (SSH dynamic forward or sing-box) if the port is not already serving."""
+    global _proc, _proc_mode
     host, port = _port_of(cfg.proxy_url)
     if port_open(host, port):
         return {"success": True, "message": f"跳板已在 {host}:{port} 监听", **status(cfg)}
+    if _mode(cfg) == "singbox":
+        return _start_singbox(cfg, host, port, wait)
     if not shutil.which("ssh"):
         return {"success": False, "message": "本机没有 ssh 命令", **status(cfg)}
     cmd = [
@@ -97,6 +147,7 @@ def start(cfg: ApiConfig, wait: float = 20.0) -> dict:
     try:
         _proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                  start_new_session=True)
+        _proc_mode = "ssh"
     except Exception as e:
         return {"success": False, "message": f"启动失败: {e}", **status(cfg)}
     deadline = time.time() + wait
@@ -113,7 +164,7 @@ def start(cfg: ApiConfig, wait: float = 20.0) -> dict:
 
 
 def stop(cfg: ApiConfig) -> dict:
-    global _proc
+    global _proc, _proc_mode
     if _proc is not None and _proc.poll() is None:
         try:
             os.killpg(os.getpgid(_proc.pid), signal.SIGTERM)
@@ -124,6 +175,7 @@ def stop(cfg: ApiConfig) -> dict:
         except Exception:
             pass
     _proc = None
+    _proc_mode = None
     host, port = _port_of(cfg.proxy_url)
     still = port_open(host, port)
     return {"success": not still,
