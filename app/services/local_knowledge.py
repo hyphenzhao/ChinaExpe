@@ -404,7 +404,12 @@ class LocalKnowledgeService:
             title = header_match.group(1).strip()
             source = header_match.group(2).strip()
             body = content[header_match.end() :]
-            body = re.sub(r"^={5,}\s*\n", "", body)
+            # Dates/recovery provenance belong to the header, not article excerpts.
+            divider = re.search(r"^={5,}\s*$", body, re.M)
+            if divider:
+                body = body[divider.end():].lstrip()
+            else:
+                body = re.sub(r"^抓取时间:[^\n]*\n", "", body)
         else:
             # Try markdown heading
             md_match = re.match(r"^#\s+(.+)", content)

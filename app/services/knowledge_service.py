@@ -1,7 +1,7 @@
 """Vector knowledge service (LanceDB + Ollama bge-m3).
 
 Tables (in ``data/lancedb``; falls back to the legacy ``~/.openclaw/memory/lancedb``):
-- ``ziwei_knowledge``  legacy 紫微麦 article chunks (columns: content/source/title/…)
+- ``ziwei_knowledge``  repaired 紫微麦 article chunks (legacy table is a fallback)
 - ``literature``       chunks built from knowledge_base/literature by ``build_vectors``
 """
 from __future__ import annotations
@@ -133,6 +133,9 @@ class KnowledgeService:
         if any(b in s for b in _LOW_QUALITY_SOURCES):
             return False
         head = content[:200].strip()
+        # Do not serve corrupted legacy vectors while a corrected table is rebuilt.
+        if "\ufffd" in content or re.search(r"(?:[äåæçèé](?:[^\u3400-\u9fff\s]|\xa0){1,2}){2}", content):
+            return False
         if not head:
             return False
         return not any(re.match(p, head) for p in _CHANGELOG_CONTENT_PATTERNS)

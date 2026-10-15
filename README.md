@@ -100,7 +100,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now xuanxue
 仓库包含 `data/classics/` 中已整理的典籍原文、`knowledge_base/` 中紫微麦的文本存档及典籍切片，
 可直接克隆后检索与阅读。个人命盘、聊天、笔记、API Key、HTML 镜像和生成索引不入库。
 书目、资料来源和当前文本限制见这两个目录的 README；第三方资料不适用代码的 MIT 许可。
-本地倒排索引可在设置中重建，向量库按需运行 `python scripts/build_vectors.py` 生成。
+本地倒排索引可在设置中重建，向量库运行 `python scripts/build_vectors.py` 同时生成紫微麦与典籍两张表，
+也可指定 `--scope ziwei` 或 `--scope literature`。紫微麦旧存档的乱码已修复，
+修复方式、备份和重建步骤见 [修复记录](docs/ziwei-archive-repair.md)。
 
 ```bash
 python scripts/build_classics.py      # 把 knowledge_base/literature 的切片拼回整本书
