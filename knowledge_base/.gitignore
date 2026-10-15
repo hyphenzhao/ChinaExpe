@@ -1,4 +1,13 @@
-# Ignore all actual content files — only README.md is committed
+# Share reading/search text; HTML mirrors and generated indexes stay local.
 *
-!README.md
-!.gitignore
+!*/
+!*.txt
+!*.md
+!/.gitignore
+
+# Importing personal notes must not make them public. Only reviewed books here.
+/literature/*
+!/literature/紫微斗数全书/
+!/literature/紫微斗数续道藏本/
+!/literature/梁若瑜飞星问答/
+!/literature/渊海子平/

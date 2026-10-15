@@ -97,6 +97,11 @@ sudo systemctl daemon-reload && sudo systemctl enable --now xuanxue
 
 ## 给外部 AI 会话用的命盘与典籍
 
+仓库包含 `data/classics/` 中已整理的典籍原文、`knowledge_base/` 中紫微麦的文本存档及典籍切片，
+可直接克隆后检索与阅读。个人命盘、聊天、笔记、API Key、HTML 镜像和生成索引不入库。
+书目、资料来源和当前文本限制见这两个目录的 README；第三方资料不适用代码的 MIT 许可。
+本地倒排索引可在设置中重建，向量库按需运行 `python scripts/build_vectors.py` 生成。
+
 ```bash
 python scripts/build_classics.py      # 把 knowledge_base/literature 的切片拼回整本书
 python scripts/fetch_classics.py      # 下载公有领域子平古籍（算准网），已存在的跳过

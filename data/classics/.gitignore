@@ -1,0 +1,17 @@
+# Allow only reviewed book categories and their text/EPUB originals.
+*
+!/.gitignore
+!/README.md
+!/书单.md
+!/01-紫微-三合派/
+!/02-紫微-四化飞星派/
+!/03-子平/
+!/01-紫微-三合派/**/
+!/02-紫微-四化飞星派/**/
+!/03-子平/**/
+!/01-紫微-三合派/**/*.md
+!/02-紫微-四化飞星派/**/*.md
+!/03-子平/**/*.md
+!/03-子平/**/*.epub
+# This source-library index includes personal annotations, unlike the book itself.
+/02-紫微-四化飞星派/原件/README.md

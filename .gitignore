@@ -15,11 +15,11 @@ build/
 .vscode/
 .idea/
 
-# Runtime data (API keys, sessions, people, vectors, screenshots)
-data/
-
-# Generated knowledge chunks (re-create with 设置 → 导入典籍)
-knowledge_base/literature/
+# Runtime data stays private; only the reviewed reading room can be tracked.
+/data/*
+!/data/classics/
+# Book allowlist: data/classics/.gitignore
+# Search text/chunk rules: knowledge_base/.gitignore
 
 # OS
 .DS_Store
