@@ -2,7 +2,8 @@
 const REL_CLS = { '合': 'he', '六合': 'he', '三合': 'he', '半合': 'he', '拱合': 'he', '暗合': 'he', '三会': 'he', '冲': 'chong', '刑': 'xing', '害': 'hai', '破': 'po', '克': 'chong' };
 const SHA_JI = new Set(['羊刃', '劫煞', '亡神', '灾煞', '元辰', '六厄', '勾绞', '孤辰', '寡宿', '空亡', '血刃', '十恶大败', '阴差阳错', '童子', '大耗']);
 
-function wx(ch, w) { return `<span class="wx-${w}">${ch}</span>`; }
+function wx(ch, w) { return `<span class="wx-${w}" title="${esc(ch)} · ${esc(w)}">${esc(ch)}</span>`; }
+function wxPillar(p) { return p && p.ganzhi ? wx(p.stem, p.stem_wuxing) + wx(p.branch, p.branch_wuxing) : ''; }
 
 function renderBazi() {
     const c = AppState.bazi; const root = document.getElementById('bazi-root');
@@ -36,7 +37,7 @@ function renderBazi() {
     const stLabel = A ? `${A.strength.label} ${A.strength.same_pct}%${A.strength.border ? '（临界）' : ''}` : c.strength.label;
     root.innerHTML = `<div class="bz-wrap">
         <div class="bz-pv">${previewBar()}</div>
-        <div class="bz-head"><span>${esc(c.birth.jieqi_note)}</span><span>日主 <b>${c.day_master}</b></span><span>身强弱 <b>${stLabel}</b>（月令${c.strength.month_status}）</span><span>胎元 <b>${c.taiyuan}</b> 命宫 <b>${c.minggong}</b> 身宫 <b>${c.shengong}</b></span></div>
+        <div class="bz-head"><span>${esc(c.birth.jieqi_note)}</span><span>日主 <b>${wx(c.day_master, P[2].stem_wuxing)}</b></span><span>身强弱 <b>${stLabel}</b>（月令${c.strength.month_status}）</span><span>胎元 <b>${c.taiyuan}</b> 命宫 <b>${c.minggong}</b> 身宫 <b>${c.shengong}</b></span></div>
         ${table}
         <div class="bz-rel">${rel}</div>
         <div class="bz-wx">${wxs}</div>
@@ -102,13 +103,13 @@ function renderBaziStrips() {
     if (!t || AppState.chart !== 'bazi') { area.innerHTML = ''; return; }
     const cur = t.date.slice(0, 10);
     const nowY = new Date().getFullYear();
-    let html = `<div class="strip"><span class="strip-label">大运</span>${t.dayun_all.filter(d => d.index >= 1).map(d => `<span class="chip ${t.dayun && t.dayun.ganzhi === d.ganzhi ? 'active' : ''} ${nowY >= d.start_year && nowY <= d.end_year ? 'now' : ''}" onclick="loadBaziTimeline('${d.start_year}-07-01')">${d.ganzhi} ${d.stem_shishen}<small>${d.start_age}岁 ${d.start_year}</small></span>`).join('')}
+    let html = `<div class="strip"><span class="strip-label">大运</span>${t.dayun_all.filter(d => d.index >= 1).map(d => `<span class="chip ${t.dayun && t.dayun.ganzhi === d.ganzhi ? 'active' : ''} ${nowY >= d.start_year && nowY <= d.end_year ? 'now' : ''}" onclick="loadBaziTimeline('${d.start_year}-07-01')"><span>${wxPillar(d)} ${d.stem_shishen}</span><small>${d.start_age}岁 ${d.start_year}</small></span>`).join('')}
         <span class="strip-actions"><span class="text-muted" style="font-size:.68rem;">${t.forward ? '顺' : '逆'}排 · ${esc(t.start.text)} · 起运 ${t.start.date}</span><button class="btn btn-ghost btn-sm" onclick="loadBaziTimeline('${fmtDate(new Date())}')">今天</button><button class="btn btn-accent btn-sm" onclick="askBaziLevel()">💬 问此运限</button></span></div>`;
-    html += `<div class="strip"><span class="strip-label">流年</span>${t.liunian_all.map(y => `<span class="chip ${t.liunian.year === y.year ? 'active' : ''} ${y.year === nowY ? 'now' : ''}" onclick="loadBaziTimeline('${y.year}-07-01')">${y.year} ${y.ganzhi}<small>${y.age}岁 ${y.stem_shishen}</small></span>`).join('')}</div>`;
-    html += `<div class="strip"><span class="strip-label">流月</span>${t.liuyue_all.map(m => `<span class="chip ${t.liuyue.ganzhi === m.ganzhi ? 'active' : ''}" onclick="loadBaziTimeline('${m.start ? nextDay(m.start) : cur}')">${m.jie} ${m.ganzhi}<small>${m.start ? m.start.slice(5) : ''} ${m.stem_shishen}</small></span>`).join('')}</div>`;
+    html += `<div class="strip"><span class="strip-label">流年</span>${t.liunian_all.map(y => `<span class="chip ${t.liunian.year === y.year ? 'active' : ''} ${y.year === nowY ? 'now' : ''}" onclick="loadBaziTimeline('${y.year}-07-01')"><span>${y.year} ${wxPillar(y)}</span><small>${y.age}岁 ${y.stem_shishen}</small></span>`).join('')}</div>`;
+    html += `<div class="strip"><span class="strip-label">流月</span>${t.liuyue_all.map(m => `<span class="chip ${t.liuyue.ganzhi === m.ganzhi ? 'active' : ''}" onclick="loadBaziTimeline('${m.start ? nextDay(m.start) : cur}')"><span>${m.jie} ${wxPillar(m)}</span><small>${m.start ? m.start.slice(5) : ''} ${m.stem_shishen}</small></span>`).join('')}</div>`;
     html += `<div class="strip"><span class="strip-label">流日</span><span class="bz-day"><button class="btn btn-ghost btn-sm" onclick="shiftBaziDay(-1)">◀</button><input type="date" class="input" value="${cur}" onchange="loadBaziTimeline(this.value)"><button class="btn btn-ghost btn-sm" onclick="shiftBaziDay(1)">▶</button></span>
-        <span class="chip active">${t.liuri.ganzhi}<small>${esc(t.liuri.lunar || '')} ${t.liuri.stem_shishen}</small></span></div>`;
-    const sum = `${t.dayun ? '大运' + t.dayun.ganzhi : ''} · ${t.liunian.year}${t.liunian.ganzhi} · ${t.liuyue.ganzhi} · ${cur.slice(5)} ${t.liuri.ganzhi}`;
+        <span class="chip active"><span>${wxPillar(t.liuri)}</span><small>${esc(t.liuri.lunar || '')} ${t.liuri.stem_shishen}</small></span></div>`;
+    const sum = `${t.dayun ? '大运' + wxPillar(t.dayun) : ''} · ${t.liunian.year}${wxPillar(t.liunian)} · ${wxPillar(t.liuyue)} · ${cur.slice(5)} ${wxPillar(t.liuri)}`;
     area.innerHTML = wrapStrips(html, sum);
     if (!isMobile() || AppState.stripsOpen) scrollActiveChips();
 }
@@ -125,8 +126,8 @@ function renderBaziChain() {
     const t = AppState.baziTimeline; const el = document.getElementById('bz-chain'); if (!t || !el) return;
     const card = (lv, p, extra) => !p || !p.ganzhi ? '' : `<div class="bz-card cur">
         <div class="lv"><span>${lv}</span><span>${extra || ''}</span></div>
-        <div class="gz">${wx(p.stem, p.stem_wuxing)}${p.branch}</div>
-        <div class="ss">干 <b>${p.stem_shishen}</b> · 支 ${p.hidden.map(h => `${h.stem}${h.shishen}`).join(' ')}</div>
+        <div class="gz">${wxPillar(p)}</div>
+        <div class="ss">干 <b>${p.stem_shishen}</b> · 支 ${p.hidden.map(h => `${wx(h.stem, h.wuxing)}${h.shishen}`).join(' ')}</div>
         <div class="ss">地势 ${p.dishi} · 自坐 ${p.zizuo} · 空亡 ${p.xunkong}</div>
         <div class="bz-ss">${p.shensha.map(s => `<span class="${SHA_JI.has(s) ? 'ji' : ''}">${s}</span>`).join('')}</div>
         <button class="btn btn-ghost btn-sm" onclick="addContextTag({level:'${lv} ${p.ganzhi}'}, {open:true})">💬 问 AI</button></div>`;

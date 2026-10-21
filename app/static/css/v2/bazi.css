@@ -8,7 +8,16 @@
 .bz-table thead td { font-weight: 700; color: var(--accent-gold); background: rgba(180,83,9,.06); }
 .bz-table td.gan, .bz-table td.zhi { font-size: 1.5rem; font-weight: 700; cursor: pointer; }
 .bz-table td.gan:hover, .bz-table td.zhi:hover { border-color: var(--accent-gold); }
-.wx-木 { color: #15803d; } .wx-火 { color: #dc2626; } .wx-土 { color: #b45309; } .wx-金 { color: #4b5563; } .wx-水 { color: #1d4ed8; }
+/* 白底五行配色：木绿、火红、土赭黄、金金色、水黑；全页共用。 */
+:root {
+    --bz-wx-木: #15803d;
+    --bz-wx-火: #dc2626;
+    --bz-wx-土: #6f4e00;
+    --bz-wx-金: #d6a600;
+    --bz-wx-水: #111111;
+}
+.wx-木 { color: var(--bz-wx-木); } .wx-火 { color: var(--bz-wx-火); } .wx-土 { color: var(--bz-wx-土); }
+.wx-金 { color: var(--bz-wx-金); } .wx-水 { color: var(--bz-wx-水); }
 .bz-hidden { display: flex; flex-direction: column; gap: .1rem; font-size: .75rem; }
 .bz-hidden span small { color: var(--text-muted); margin-left: .2rem; }
 .bz-ss { display: flex; flex-wrap: wrap; gap: .2rem; justify-content: center; }
@@ -35,8 +44,8 @@
 .bza-bar i { display: block; height: 100%; background: #9ca3af; border-radius: 99px; }
 .bza-bar i.same { background: var(--accent-gold); }
 .bza-bar i.geju { background: #6b7280; }
-.bza-bar i.wxbar-木 { background: #15803d; } .bza-bar i.wxbar-火 { background: #dc2626; } .bza-bar i.wxbar-土 { background: #b45309; }
-.bza-bar i.wxbar-金 { background: #4b5563; } .bza-bar i.wxbar-水 { background: #1d4ed8; }
+.bza-bar i.wxbar-木 { background: var(--bz-wx-木); } .bza-bar i.wxbar-火 { background: var(--bz-wx-火); } .bza-bar i.wxbar-土 { background: var(--bz-wx-土); }
+.bza-bar i.wxbar-金 { background: var(--bz-wx-金); } .bza-bar i.wxbar-水 { background: var(--bz-wx-水); }
 .bza-num { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .bza-flag { padding: 0 .35rem; border-radius: 99px; border: 1px solid var(--border-color); color: var(--text-muted); }
 .bza-flag.on { border-color: var(--accent-green); color: var(--accent-green); }

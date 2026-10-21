@@ -9,7 +9,7 @@ from lunar_python import Solar
 from .. import calendar as cal
 from ..settings import BaziSettings, BirthInput
 from .chart import changsheng, compute_bazi, nayin, shishen, xunkong
-from .constants import HIDDEN, STEM_WUXING
+from .constants import BRANCH_WUXING, HIDDEN, STEM_WUXING
 from . import shensha as SS
 
 
@@ -17,9 +17,9 @@ def _flow_pillar(ctx: SS.Context, gz: str, pos: str, day_stem: str) -> dict:
     g, z = gz[0], gz[1]
     return {
         "pos": pos, "ganzhi": gz, "stem": g, "branch": z,
-        "stem_wuxing": STEM_WUXING[g],
+        "stem_wuxing": STEM_WUXING[g], "branch_wuxing": BRANCH_WUXING[z],
         "stem_shishen": shishen(day_stem, g),
-        "hidden": [{"stem": h, "shishen": shishen(day_stem, h)} for h in HIDDEN[z]],
+        "hidden": [{"stem": h, "wuxing": STEM_WUXING[h], "shishen": shishen(day_stem, h)} for h in HIDDEN[z]],
         "branch_shishen": [shishen(day_stem, h) for h in HIDDEN[z]],
         "nayin": nayin(gz), "xunkong": xunkong(gz),
         "dishi": changsheng(day_stem, z), "zizuo": changsheng(g, z),
